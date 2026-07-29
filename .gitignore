@@ -1,0 +1,9 @@
+# Downloaded pages and URL lists. ~340 MB and regenerable from the sitemap,
+# so it does not belong in the repository.
+data/
+
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env

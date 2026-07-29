@@ -1,0 +1,17 @@
+# Sites to download. Add a block, run the script.
+
+sites:
+  - name: academicpositions
+
+    # The site's sitemap index: a list of other sitemaps.
+    sitemap_index: https://academicpositions.com/sitemap.xml
+
+    # Which of those sitemaps holds the job ads. Matched as plain text in the URL.
+    sitemap_match: jobs
+
+    # What a job ad URL looks like, so category and employer pages are skipped:
+    # https://academicpositions.com/ad/<employer>/<year>/<job-title>/<id>
+    job_url_contains: /ad/
+
+    # Seconds between requests.
+    delay: 2
