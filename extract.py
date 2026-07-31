@@ -240,6 +240,8 @@ parser.add_argument("--one", action="store_true", help="read one file and print 
 parser.add_argument("--all", action="store_true", help="read every file into the table")
 parser.add_argument("--check", action="store_true",
                     help="report what is in the table so it can be verified")
+parser.add_argument("--force", action="store_true",
+                    help="with --all, re-read files that were already extracted")
 args = parser.parse_args()
 
 if not (args.one or args.all or args.check):
@@ -271,6 +273,25 @@ for site in sites:
 
     written = skipped = no_body = 0
     with psycopg.connect(DSN) as conn:
+        # Only read files that have not been extracted before. A downloaded page
+        # never changes, so re-reading it produces the same row. New files arrive
+        # from scrape.py --update and are not in this set.
+        done = set()
+        if not args.force:
+            done = {
+                row[0] for row in conn.execute(
+                    "SELECT source_id FROM positions "
+                    " WHERE source = %s AND extracted_at IS NOT NULL",
+                    (site["name"],),
+                ).fetchall()
+            }
+
+        files = [path for path in files if path.stem not in done]
+        print(f"  {len(done)} already extracted, {len(files)} to do")
+        if not files:
+            print("  nothing to do -- use --force to re-read everything")
+            continue
+
         for number, path in enumerate(files, 1):
             row = read(path)
             if row is None:

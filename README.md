@@ -13,19 +13,19 @@ of downloading.
 ```
 sitemap  →  scrape.py    →  data/raw/<site>/<id>.html      done
                                ↓
-             extract.py  →  positions table                next
+             extract.py  →  positions table                done
                                ↓
-             embed.py    →  embedding column
+             embed.py    →  embedding column               next
                                ↓
              search.py   →  ask questions
 ```
 
 ## Status
 
-Downloading works: 1,886 ads from academicpositions.com, with a nightly update. The
-database exists and is empty.
+1,886 ads downloaded from academicpositions.com, with a nightly update. 1,882 of them
+extracted into the database — the other four carry no `JobPosting` block.
 
-Not built yet: extraction, embeddings, search.
+Not built yet: embeddings, search.
 
 ## Setup
 
@@ -145,11 +145,50 @@ A board like this adds a few dozen ads a day, so a nightly run is a couple of mi
 A few URLs in any sitemap are already deleted and answer 404. Those are recorded and not
 tried again, so the "to go" count reaches zero instead of retrying them forever.
 
+## Extracting
+
+Reads the saved HTML files and writes one row per position into the database.
+
+```bash
+python extract.py --one      # read one file, print what came out, write nothing
+python extract.py --all      # read every file not yet extracted
+python extract.py --check    # report what is in the table
+python extract.py --all --force   # re-read everything, after changing the parser
+```
+
+Like the downloader, `--all` skips work already done — it only reads files with no row
+in the table yet, so a nightly run handles just the new ads.
+
+Nothing here touches the network. Fixing a parsing mistake costs a re-run of seconds.
+
+### Where the fields come from
+
+Every ad page carries a `JobPosting` block in [schema.org](https://schema.org/JobPosting)
+JSON-LD — a standard search engines read, embedded in a `<script>` tag and invisible on
+the page. Title, employer, city, country, posted date and closing date come straight out
+of it, so nothing has to be guessed from markup. Most job boards publish the same block,
+so this should largely carry over to the next site.
+
+The advert text is taken from the page's **own LinkedIn share link**, whose `summary`
+parameter holds the complete advert as HTML and nothing else.
+
+That is deliberate. The obvious approach — take the page text and remove the furniture —
+does not work: the body also holds a region picker naming every European country, a
+language picker, three modals and a list of other people's adverts. Removing those means
+guessing every selector, and anything missed is silently welded onto the description. The
+region picker alone would have put *"Sverige Norge Danmark Deutschland"* into all 1,882
+rows, so a search for jobs in Germany would match every one of them. Taking only what the
+site itself packaged up for sharing avoids the whole problem.
+
+### Checking it
+
+`--check` exists so the extraction can be judged rather than trusted. It reports how many
+rows got each field, the countries and advert lengths it found, the date ranges, and then
+prints five positions at random with their links — open those and compare against the
+live page.
+
 ## Next
 
-**Extraction** — read each saved HTML file, pull out the JSON-LD and the description
-text, write one row per position.
-
-**Then embedding and search.** One vector per position. A search narrows 1,886 to about
+**Embedding and search.** One vector per position. A search narrows 1,882 down to about
 50, a reranker narrows that to 8, and only those 8 are shown to a language model. That is
 what keeps the context small enough to be cheap.
