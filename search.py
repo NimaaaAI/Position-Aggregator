@@ -15,7 +15,7 @@ import argparse
 import os
 import sys
 import textwrap
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Before sentence_transformers pulls in transformers. See embed.py.
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -56,7 +56,10 @@ parser.add_argument("--rerank", action="store_true",
                     help="re-read the best candidates with the cross-encoder")
 args = parser.parse_args()
 
-from sentence_transformers import SentenceTransformer
+# Imported here rather than at the top on purpose: sentence_transformers takes a
+# couple of seconds to load, and there is no reason for `--help` or a mistyped
+# argument to wait for it. Ruff's E402 is right in general and wrong here.
+from sentence_transformers import SentenceTransformer  # noqa: E402
 
 print(f"loading {MODEL} on {device()}")
 model = SentenceTransformer(MODEL, device=device())
@@ -104,7 +107,9 @@ if args.rerank:
     # cannot be run over the whole table.
     pairs = [(args.question, f"{row[1]}. {row[7][:2000]}") for row in rows]
     scores = cross.predict(pairs, show_progress_bar=False)
-    reranked = sorted(zip(rows, scores), key=lambda pair: -pair[1])[:args.limit]
+    reranked = sorted(
+        zip(rows, scores, strict=True), key=lambda pair: -pair[1]
+    )[:args.limit]
     rows = [row for row, _ in reranked]
 
 print(f"\n{len(rows)} result(s) for: {args.question}\n")
@@ -114,7 +119,7 @@ for place, row in enumerate(rows, 1):
 
     where = ", ".join(part for part in (city, country) if part) or "location not given"
     when = f"closes {closes:%d %b %Y}" if closes else "no closing date"
-    if closes and closes < datetime.now(timezone.utc):
+    if closes and closes < datetime.now(UTC):
         when += "  [CLOSED]"
 
     if reranked:
