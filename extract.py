@@ -174,7 +174,7 @@ def check():
         counts = conn.execute(
             "SELECT " + ", ".join(f"count({f})" for f in fields) + " FROM positions"
         ).fetchone()
-        for field, filled in zip(fields, counts):
+        for field, filled in zip(fields, counts, strict=True):
             flag = "" if filled == total else "   <-- missing some"
             print(f"  {field:12} {filled:>5} / {total}  {100 * filled // total:>3}%{flag}")
 
