@@ -336,10 +336,65 @@ than in advance.
 
 ```bash
 pip install openai python-dotenv
-
 cp .env.example .env      # then paste your key into LLM_API_KEY
+
+python ask.py "PhD in AI for medical imaging"
+python ask.py "quantum computing" --show 60 --context 20
 python ask.py --models    # what the key can reach, grouped by family
 ```
+
+Two separate numbers:
+
+- **`--show`** — how many positions are printed for you. Default 40.
+- **`--context`** — how many the model is given to write about. Default 10.
+
+Nothing is hidden. The model describes the head of a list you can read in full, and the
+positions it was shown are marked with `*`.
+
+### Three things that had to be got right
+
+**The model never writes a URL.** It once turned
+`.../abdominal-aortic-aneurysm/251224` into `.../abdominal-aneurysm/251224` — a
+confident, broken link indistinguishable from a working one. A model does not copy text,
+it regenerates it token by token, and long slugs are where that fails. So it writes `[3]`
+and the URL is pasted in afterwards from the database row.
+
+**It must account for every position it is given.** Told to "be generous", it returned
+one position out of ten. Told there are *"10 positions, numbered [1] to [10], mention all
+10"*, it covers all ten — close matches first, poor fits at the end with a line saying
+why. The reader decides what is worth their time; that is not the model's job.
+
+Curiously this made answers *cheaper*: 619 output tokens covering ten positions, against
+693 covering six, because per-position paragraphs collapsed into one-liners.
+
+**Coverage is verified, not assumed.** After each answer the citations are counted, and
+anything left out is reported:
+
+```
+the model left out 2 of 10 positions it was given: [4], [9]
+```
+
+Everything else here can be checked — extraction against the live page, vector counts in
+SQL, rerank scores against your own judgement. A silently dropped position was the one
+failure that looked identical to success.
+
+### What the model adds
+
+Two of the ten results were titled only *"PhD Student (f/m/d)"*. The model read the
+adverts and reported that they concern personalised technical medicine for Parkinson's
+disease. Filtering on a job board cannot do that.
+
+### Cost
+
+About **3,000 tokens a question** — 2,400 in, 600 out — which is under a tenth of a penny
+on `gpt-4o-mini`, roughly 1,300 questions per dollar.
+
+`temperature` is 0: the same question gives the same answer. There is no writing to be
+done, only a fixed list to describe.
+
+Reasoning models are a poor fit here. `gpt-5-nano` spent 1,400–2,000 output tokens on
+answers *shorter* than the 619 `gpt-4o-mini` needed, because it was thinking about a
+ranking that had already been decided before it saw anything.
 
 The endpoint is OpenAI-compatible, so any provider of that shape works — set
 `LLM_BASE_URL` and `LLM_API_KEY` in `.env`. Nothing else in the project needs an API key;
@@ -361,6 +416,6 @@ machine for free.
 
 ## Next
 
-**Wiring the model in**, then a local web interface. Retrieval narrows 1,951 to 40, the
-reranker narrows that to 8, and only those 8 reach the model — roughly 2,000 tokens. All
-1,951 adverts would be about 4.7 million.
+**A local web interface.** The same pipeline behind FastAPI, so questions can be asked in
+a browser, with the retrieval visible next to the answer and chat history kept per
+conversation.
