@@ -17,15 +17,15 @@ sitemap  →  scrape.py    →  data/raw/<site>/<id>.html      done
                                ↓
              embed.py    →  embedding column               done
                                ↓
-             search.py   →  ask questions                  next
+             search.py   →  ask questions                  done
 ```
 
 ## Status
 
-1,955 ads downloaded from academicpositions.com, 1,951 extracted and embedded. The four
-missing carry no `JobPosting` block.
+1,955 ads downloaded from academicpositions.com, 1,951 extracted, embedded and
+searchable. The four missing carry no `JobPosting` block.
 
-Not built yet: search.
+Not built yet: a language model over the results.
 
 ## The nightly cycle
 
@@ -260,8 +260,60 @@ FROM positions LIMIT 2;"
 `-x` prints each row as a vertical block, which is the only readable way to look at a
 table this wide.
 
+## Searching
+
+```bash
+python search.py "funded PhD in machine learning"
+python search.py "PhD in artificial intelligence for medical imaging" --rerank
+python search.py "quantum computing" --open --limit 20
+python search.py "doktorand maskininlärning"        # any language works
+```
+
+`--open` hides positions whose closing date has passed; without it they appear marked
+`[CLOSED]`.
+
+### Two stages, and why the second one matters
+
+The vector search compares your question against all 1,951 positions at once and is
+effectively instant. The reranker, behind `--rerank`, then re-reads the best 50
+properly and reorders them.
+
+The difference is easy to see. For *"PhD in artificial intelligence for medical
+imaging"*:
+
+| Position | vector | rerank |
+|---|---|---|
+| Doctoral researcher in AI / ML Biomedical Imaging | 0.868 | **0.935** |
+| PhD in Multi-Aperture Ultrasound Imaging | 0.862 | 0.555 |
+| Postdoc in Computational Ultrasound Imaging | 0.868 | 0.374 |
+| PhD Student (f/m/d), no subject given | 0.855 | 0.240 |
+
+The first and third had **the same** vector score. The reranker separated them, because
+it reads the question and the advert together rather than comparing two summaries made
+independently — so it can notice that one is a postdoc about ultrasound hardware and the
+other is a PhD about AI.
+
+Notice the spread. Vector scores sit in a narrow 0.82–0.88 band and barely distinguish
+anything; rerank scores run from 0.935 down to 0.087. The vector stage is for narrowing
+1,951 to 50 cheaply. The reranker is for deciding which of those 50 actually answer the
+question.
+
+Both models run on this machine. Nothing is sent anywhere.
+
+## Not used, and why
+
+**No knowledge graph.** Graphs earn their keep when an answer requires following
+relationships between documents. Job adverts are independent, self-contained records —
+there is nothing to traverse between them, so a graph would be machinery without a
+payoff.
+
+**No hybrid search yet.** Vector search is weak at exact strings: grant codes, acronyms
+like MSCA or ERC, project names. Combining it with Postgres's built-in full-text search
+would fix that and needs no new dependency. Worth adding when a real query fails rather
+than in advance.
+
 ## Next
 
-**Search.** A question narrows 1,951 positions down to about 50 by vector similarity, a
-reranker narrows that to 8, and only those 8 would ever be shown to a language model.
-That is what keeps the context small enough to be cheap.
+**A language model over the results.** Retrieval narrows 1,951 to 40, the reranker
+narrows that to a handful, and only those are shown to the model. That is what keeps the
+context small enough to be cheap — all 1,951 adverts would be roughly 4.7 million tokens.
