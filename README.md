@@ -312,8 +312,35 @@ like MSCA or ERC, project names. Combining it with Postgres's built-in full-text
 would fix that and needs no new dependency. Worth adding when a real query fails rather
 than in advance.
 
+## Asking a language model
+
+```bash
+pip install openai python-dotenv
+
+cp .env.example .env      # then paste your key into LLM_API_KEY
+python ask.py --models    # what the key can reach, grouped by family
+```
+
+The endpoint is OpenAI-compatible, so any provider of that shape works — set
+`LLM_BASE_URL` and `LLM_API_KEY` in `.env`. Nothing else in the project needs an API key;
+retrieval and reranking are local.
+
+`--models` groups what is available and marks models that cannot answer a question at
+all. That distinction is not always obvious from the name: `gpt-4o-mini-tts` is
+text-to-speech, not a smaller `gpt-4o-mini`.
+
+### A strong model is not needed here
+
+By the time the model is asked anything, retrieval and the reranker have already chosen
+which eight positions matter. All that is left is summarising them and quoting the links.
+`gpt-4o-mini` and similar are entirely sufficient, and cost a fraction of a frontier
+model.
+
+The work that decides answer quality — the embeddings and the reranker — happens on this
+machine for free.
+
 ## Next
 
-**A language model over the results.** Retrieval narrows 1,951 to 40, the reranker
-narrows that to a handful, and only those are shown to the model. That is what keeps the
-context small enough to be cheap — all 1,951 adverts would be roughly 4.7 million tokens.
+**Wiring the model in**, then a local web interface. Retrieval narrows 1,951 to 40, the
+reranker narrows that to 8, and only those 8 reach the model — roughly 2,000 tokens. All
+1,951 adverts would be about 4.7 million.
