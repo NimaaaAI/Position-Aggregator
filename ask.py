@@ -19,13 +19,31 @@ BASE_URL = os.getenv("LLM_BASE_URL", "https://api.gapgpt.app/v1")
 API_KEY = os.getenv("LLM_API_KEY", "")
 MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
-# Rough ordering, best first, used only to sort the listing so the useful models
-# are not buried among dozens of embedding and audio ones. Anything not named
-# here still gets listed, just underneath.
-PREFERRED = [
-    "gpt-5", "o3", "gpt-4.1", "gpt-4o", "o4-mini", "gpt-4.1-mini",
-    "gpt-4o-mini", "o3-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo",
+# Models that cannot answer a question, whatever their name suggests. Matched as
+# substrings. "gpt-4o-mini-tts" is text-to-speech, not a smaller gpt-4o-mini, and
+# would otherwise sit near the top of the list looking like a sensible choice.
+NOT_CHAT = (
+    "embedding", "-tts", "whisper", "dall-e", "imagen", "flux",
+    "-image", "image-", "z-image", "audio", "-live-",
+)
+
+# Families in rough capability order, used only to group the listing. Within a
+# family the API's own naming does the sorting.
+FAMILIES = [
+    ("OpenAI",   ("gpt-", "o3", "o4", "chatgpt-")),
+    ("Claude",   ("claude-",)),
+    ("Gemini",   ("gemini-", "gemma-")),
+    ("Grok",     ("grok-",)),
+    ("DeepSeek", ("deepseek-",)),
+    ("Qwen",     ("qwen", "Qwen", "gapgpt-qwen")),
+    ("Other",    ("kimi", "glm-")),
 ]
+
+# Good enough for this job and cheap. The retrieval and reranking have already
+# chosen the positions; the model only has to summarise eight of them and quote
+# the links, which does not need a frontier model.
+CHEAP = ("gpt-4o-mini", "gpt-5-nano", "gpt-5.4-nano", "gemini-2.5-flash-lite",
+         "gemini-3.1-flash-lite", "deepseek-chat", "gpt-4.1-nano")
 
 
 def client():
@@ -39,12 +57,15 @@ def client():
     return OpenAI(base_url=BASE_URL, api_key=API_KEY)
 
 
-def rank_of(name):
-    """Where a model sits in PREFERRED, or at the end if it is not listed."""
-    for index, preferred in enumerate(PREFERRED):
-        if name.startswith(preferred):
-            return index
-    return len(PREFERRED)
+def is_chat(name):
+    return not any(marker in name for marker in NOT_CHAT)
+
+
+def family_of(name):
+    for label, prefixes in FAMILIES:
+        if any(name.startswith(prefix) for prefix in prefixes):
+            return label
+    return "Other"
 
 
 def list_models():
@@ -58,24 +79,29 @@ def list_models():
     if not names:
         sys.exit("the API returned no models")
 
-    # Chat models first, in rough strength order. The rest -- embeddings, audio,
-    # image -- are listed separately because they cannot answer a question.
-    chat = sorted(
-        [n for n in names if rank_of(n) < len(PREFERRED)],
-        key=lambda n: (rank_of(n), n),
-    )
-    other = [n for n in names if rank_of(n) == len(PREFERRED)]
+    chat = [name for name in names if is_chat(name)]
+    other = [name for name in names if not is_chat(name)]
 
-    print(f"{len(names)} model(s) available\n")
-    print("--- chat models, strongest first")
-    for name in chat:
-        marker = "  <- default (LLM_MODEL in .env)" if name == MODEL else ""
-        print(f"  {name}{marker}")
+    print(f"{len(names)} model(s): {len(chat)} can answer questions, "
+          f"{len(other)} cannot\n")
 
-    if other:
-        print(f"\n--- everything else ({len(other)})")
-        for name in other:
-            print(f"  {name}")
+    for label, _ in FAMILIES:
+        group = [name for name in chat if family_of(name) == label]
+        if not group:
+            continue
+        print(f"--- {label}")
+        for name in group:
+            notes = []
+            if name == MODEL:
+                notes.append("default")
+            if name in CHEAP:
+                notes.append("cheap, enough for this")
+            suffix = f"   <- {', '.join(notes)}" if notes else ""
+            print(f"  {name}{suffix}")
+        print()
+
+    print(f"--- not usable here: embedding, speech and image models ({len(other)})")
+    print(f"  {', '.join(other[:8])}, ...")
 
 
 parser = argparse.ArgumentParser()
