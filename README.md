@@ -15,17 +15,36 @@ sitemap  →  scrape.py    →  data/raw/<site>/<id>.html      done
                                ↓
              extract.py  →  positions table                done
                                ↓
-             embed.py    →  embedding column               next
+             embed.py    →  embedding column               done
                                ↓
-             search.py   →  ask questions
+             search.py   →  ask questions                  next
 ```
 
 ## Status
 
-1,886 ads downloaded from academicpositions.com, with a nightly update. 1,882 of them
-extracted into the database — the other four carry no `JobPosting` block.
+1,955 ads downloaded from academicpositions.com, 1,951 extracted and embedded. The four
+missing carry no `JobPosting` block.
 
-Not built yet: embeddings, search.
+Not built yet: search.
+
+## The nightly cycle
+
+Four commands, in this order. Each skips work already done, so a normal night is a
+couple of minutes.
+
+```bash
+python scrape.py  --update    # what is new, what has closed, download the new
+python extract.py --all       # read only the newly downloaded files
+python embed.py   --all       # embed only the rows without a vector
+python extract.py --check     # report, to confirm it all landed
+```
+
+A real run looked like this: 69 new and 70 closed found in the sitemap, 69 pages
+downloaded, 69 rows extracted, 69 embedded in 2.3 seconds.
+
+Ads that leave the sitemap have closed. Their HTML stays on disk and their row stays in
+the table — the closing date already says they are past, and it is useful to be able to
+see a position you missed.
 
 ## Setup
 
@@ -187,8 +206,62 @@ rows got each field, the countries and advert lengths it found, the date ranges,
 prints five positions at random with their links — open those and compare against the
 live page.
 
+## Embedding
+
+Turns each position's `embed_text` into 768 numbers, so positions can be found by
+meaning rather than by matching words.
+
+```bash
+pip install sentence-transformers pgvector
+
+python embed.py --one          # embed one row and show the result
+python embed.py --all          # embed every row without a vector
+python embed.py --all --force  # redo everything
+```
+
+About a minute for 1,900 positions on the GPU, seconds for a nightly batch.
+
+The model is `intfloat/multilingual-e5-base`, running locally — nothing is sent anywhere
+and there is no API cost. Multilingual matters here: the adverts arrive in Swedish,
+German, French, Dutch and Norwegian, and a question in English has to find them.
+
+Three details:
+
+- **e5 needs prefixes.** Documents are encoded as `passage: …` and searches as
+  `query: …`. That is how the model was trained; leaving them off quietly makes results
+  worse and nothing warns you. The search side must use `query: ` to match.
+- **Vectors are normalised**, so a dot product is the cosine similarity — which is what
+  the `vector_cosine_ops` index on the column expects.
+- **HuggingFace is forced offline.** The model is already cached locally, but the library
+  otherwise calls out to check for updates on every run, which is slow on a poor
+  connection and fails outright without one.
+
+Only rows with no vector are touched. Since `extract.py` clears the vector whenever
+`embed_text` changes, re-extracting automatically queues exactly those rows for
+re-embedding.
+
+## Checking the database directly
+
+```bash
+psql -d positions -c "SELECT count(*), count(embedding) FROM positions;"
+
+# must return no rows: proves the upsert cannot duplicate
+psql -d positions -c "SELECT source, source_id, count(*) FROM positions
+                      GROUP BY 1,2 HAVING count(*) > 1;"
+
+# one row, all columns, long text cut short
+psql -d positions -P pager=off -x -c "
+SELECT source_id, url, title, employer, city, country, posted_at, closes_at,
+       left(description, 300) AS description,
+       substring(embedding::text, 1, 70) AS embedding
+FROM positions LIMIT 2;"
+```
+
+`-x` prints each row as a vertical block, which is the only readable way to look at a
+table this wide.
+
 ## Next
 
-**Embedding and search.** One vector per position. A search narrows 1,882 down to about
-50, a reranker narrows that to 8, and only those 8 are shown to a language model. That is
-what keeps the context small enough to be cheap.
+**Search.** A question narrows 1,951 positions down to about 50 by vector similarity, a
+reranker narrows that to 8, and only those 8 would ever be shown to a language model.
+That is what keeps the context small enough to be cheap.
