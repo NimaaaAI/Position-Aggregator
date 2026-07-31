@@ -1,0 +1,26 @@
+# Linting rules. Run `ruff check .` before committing.
+
+line-length = 90
+target-version = "py311"
+
+[lint]
+select = [
+    "F",    # pyflakes: undefined names, unused imports, unused variables.
+            # This is the group that catches real bugs. Two in this project so
+            # far -- a constant referenced after being deleted, and a helper
+            # used before it was written -- were both F errors.
+    "E",    # pycodestyle errors: spacing, indentation, line length
+    "W",    # pycodestyle warnings: trailing whitespace and similar
+    "I",    # isort: import order, so imports stay grouped and sorted
+    "UP",   # pyupgrade: syntax that is outdated for the target Python version
+    "B",    # bugbear: mutable default arguments, loop variable capture and
+            # other things that are legal Python but almost always mistakes
+]
+
+ignore = [
+    "E501",  # line too long -- the formatter handles wrapping, and a comment
+             # that runs two characters over is not worth failing a check for
+]
+
+[lint.isort]
+known-first-party = ["scrape", "extract", "embed", "search", "ask"]
