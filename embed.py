@@ -47,8 +47,12 @@ def load_model():
     print(f"loading {MODEL} on {device}")
     started = time.time()
     model = SentenceTransformer(MODEL, device=device)
-    print(f"  ready in {time.time() - started:.1f}s, "
-          f"{model.get_sentence_embedding_dimension()} dimensions")
+    # The method was renamed in a recent sentence-transformers; accept either so
+    # the version installed does not matter.
+    dimensions = getattr(
+        model, "get_embedding_dimension", model.get_sentence_embedding_dimension
+    )()
+    print(f"  ready in {time.time() - started:.1f}s, {dimensions} dimensions")
     return model
 
 

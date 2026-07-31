@@ -23,7 +23,7 @@ MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 # substrings. "gpt-4o-mini-tts" is text-to-speech, not a smaller gpt-4o-mini, and
 # would otherwise sit near the top of the list looking like a sensible choice.
 NOT_CHAT = (
-    "embedding", "-tts", "whisper", "dall-e", "imagen", "flux",
+    "embedding", "tts", "whisper", "dall-e", "imagen", "flux",
     "-image", "image-", "z-image", "audio", "-live-",
 )
 
