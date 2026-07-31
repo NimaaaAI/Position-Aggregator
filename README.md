@@ -300,6 +300,26 @@ question.
 
 Both models run on this machine. Nothing is sent anywhere.
 
+## Linting
+
+```bash
+pip install ruff
+ruff check .          # find problems
+ruff check --fix .    # fix what can be fixed safely
+```
+
+Worth having for the `F` rules alone — undefined names and unused imports. Two real bugs
+during this project were exactly that: a constant referenced after being deleted, and a
+helper used before it was written.
+
+It also caught three `zip()` calls without `strict=`. That one matters: in `embed.py`, if
+the model ever returned fewer vectors than texts, `zip` would stop at the shorter one and
+pair every row after that point with the wrong vector — no error, no warning, quietly
+wrong search results ever after. `strict=True` makes it crash instead.
+
+There is no CI. Nothing is deployed and nobody else commits, so `ruff check .` before a
+commit does the same job in a second.
+
 ## Not used, and why
 
 **No knowledge graph.** Graphs earn their keep when an answer requires following
