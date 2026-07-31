@@ -95,7 +95,10 @@ with psycopg.connect(DSN) as conn:
             convert_to_numpy=True,
         )
 
-        for (source, source_id, title, _), vector in zip(batch, vectors):
+        # strict=True: if the model ever returned a different number of vectors
+        # than texts given, zip would silently pair rows with the wrong vector
+        # and every one after it would be wrong too. Better to stop.
+        for (source, source_id, title, _), vector in zip(batch, vectors, strict=True):
             conn.execute(
                 "UPDATE positions SET embedding = %s, embedded_at = now() "
                 " WHERE source = %s AND source_id = %s",
