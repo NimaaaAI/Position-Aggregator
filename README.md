@@ -292,18 +292,27 @@ distinguishes it from *Consolidator*.
 
 With full-text added, the correct position is first. Same for **MSCA**: fourth to first.
 
-The text side runs three queries, strictest first, taking results in that order:
+The text side runs two queries, strict first:
 
 | tier | query | matches |
 |---|---|---|
 | phrase | `erc <-> starting <-> grant` | the words adjacent, in order |
 | all | `erc & starting & grant` | all present, anywhere in the advert |
-| any | `erc \| starting \| grant` | at least one present |
 
-All three are needed. `any` alone is far too generous — `ts_rank` has no notion of "erc"
-being rare and "grant" being boilerplate, so any advert mentioning a grant outranks the
-real thing. `all` and `phrase` fix that, and the looser tiers remain as fallbacks because
-a whole question rarely appears anywhere word for word.
+The phrase tier is what separates a real hit from a coincidence: an advert about
+Aristotle contains "ERC", "starting date" and "grant" in three different paragraphs and so
+satisfies `all`, but only genuine ERC Starting Grant posts have the words together.
+
+**There is deliberately no third tier ORing the words.** It sounds like useful breadth and
+is not. Asked *"I am looking for an AI or ML PhD position, show me all of them"*, it
+becomes `i | am | looking | for | … | position | …`, and every advert ever written contains
+"for" and "position". Full-text then returned most of the database with every score at the
+same 0.054 noise floor, and rank fusion promoted gender studies and post-colonial
+literature into a machine learning search.
+
+So full-text abstains when it has nothing exact to say. That is the division of labour: it
+matches literal strings, the vector search handles meaning, and a question phrased as a
+sentence is a job for the latter.
 
 Fusion compares *positions* rather than scores, which matters because a cosine similarity
 of 0.85 and a `ts_rank` of 0.09 are not on any common scale and cannot simply be added.
@@ -326,6 +335,35 @@ naming the scheme only in the small print.
 This is the thing full-text does that embeddings structurally cannot: find a funding
 scheme mentioned in a paragraph that has nothing to do with the work itself. Such results
 were dismissed as noise three times during development and were correct every time.
+
+### The numbers
+
+```
+1,951 positions
+   ↓   vector + full-text, fused by rank        milliseconds
+  60   ← adjustable, the "retrieve" box
+   ↓   reranker reads every one of them         ~1.5s
+  60   reordered, all shown in the list
+   ↓   the best of them
+  10   ← the "to model" box                     ~2,300 tokens
+```
+
+Reranking is the only expensive stage, at roughly 25ms a position, and it covers
+everything retrieved. Raising 60 to 200 is fine; it costs about five seconds.
+
+### A limitation worth knowing
+
+Ranking cannot distinguish a PhD post from a postdoc. Counting by hand, the database holds
+**52 positions whose title says both "PhD" and something AI-related**. Asked for exactly
+that, the search surfaced **7 of them in the top 40**.
+
+The reason is visible in the scores: every result sits between 0.827 and 0.846 cosine
+similarity. The embedding model considers several hundred adverts about equally "AI-ish",
+because they are, and the job type is one word in a title against hundreds in a
+description. Retrieving more helps a little; it does not fix the ranking signal.
+
+The fix would be to extract `position_type` into a column and filter on it before ranking,
+so PhD positions compete only with other PhD positions. Not built.
 
 ### Two more stages, and why they matter
 
@@ -522,9 +560,11 @@ model could have caught that, and nothing after it would have been cheap enough 
 **Better retrieval.** The pipeline works end to end; the remaining gains are in what gets
 found, not in what happens afterwards. Known weaknesses:
 
-- **Only the opening of each advert is embedded.** `embed_text` holds the first ~1,500
-  characters, so anything stated further down is invisible to search. Splitting long
-  adverts into several vectors would fix it.
 - **Position type is not extracted.** PhD, postdoc, professor and staff scientist are all
-  just text, which is why a Staff Scientist post can top a PhD search. Pulling that out
-  into a column would allow it to be filtered rather than merely explained afterwards.
+  just text, which is why 7 of 52 AI/ML PhD positions reached the top 40. A
+  `position_type` column, filtered before ranking, would fix it — and the 7-of-52 count
+  is the test to measure it against.
+- **Only the opening of each advert is embedded.** `embed_text` holds the first ~1,500
+  characters, so anything stated further down is invisible to *semantic* search. Full-text
+  already indexes the whole description, so this only affects meaning-based matching.
+  Splitting long adverts into several vectors would fix it.

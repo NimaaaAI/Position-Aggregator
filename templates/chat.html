@@ -66,7 +66,11 @@ main{max-width:86rem;margin:0 auto;padding:1.2rem;display:grid;
 .pos a:hover{color:var(--accent);text-decoration:underline}
 .pos .meta{color:var(--muted);font-size:.78rem;margin-top:.15rem}
 .pos .sc{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.72rem;
-  color:var(--faint);margin-top:.2rem}
+  color:var(--faint);margin-top:.2rem;display:flex;gap:.75rem;flex-wrap:wrap}
+.pos .sc .miss{opacity:.45}
+.hint{display:inline-flex;align-items:center;justify-content:center;width:1rem;
+  height:1rem;border:1px solid var(--line);border-radius:50%;font-size:.65rem;
+  cursor:help;color:var(--faint)}
 .tag{font-size:.68rem;border:1px solid var(--danger);color:var(--danger);
   border-radius:99px;padding:0 .4rem;margin-left:.3rem}
 .empty{color:var(--faint);font-size:.86rem}
@@ -88,9 +92,14 @@ main{max-width:86rem;margin:0 auto;padding:1.2rem;display:grid;
     </div>
     <div class="bar opts">
       <select id="model"></select>
-      <label>show <input id="show" type="number" value="40" min="1" max="200"></label>
+      <label>retrieve <input id="show" type="number" value="60" min="1" max="500">
+        <span class="hint" title="How many the search returns and the reranker re-reads. All of them are listed on the right. Reranking costs about 25ms each, so 60 takes ~1.5s and 500 takes ~12s.">?</span>
+      </label>
       <label>to model <input id="ctx" type="number" value="10" min="0" max="60"></label>
       <label><input id="openonly" type="checkbox"> open positions only</label>
+      <label><input id="hybrid" type="checkbox" checked> hybrid
+        <span class="hint" title="Vector search plus Postgres full-text, combined by rank fusion. Untick for vector only — try it on an acronym like MSCA or ERC Starting Grant.">?</span>
+      </label>
     </div>
   </div>
 </header>
@@ -118,11 +127,21 @@ function body() {
   return {
     question: $('#q').value.trim(),
     model: $('#model').value,
-    show: +$('#show').value || 40,
+    show: +$('#show').value || 60,
     context: +$('#ctx').value || 10,
     open_only: $('#openonly').checked,
+    hybrid: $('#hybrid').checked,
     rerank: true,
   };
+}
+
+// A missing score means that search did not return this position at all, which is
+// worth seeing: it shows where one search found something the other missed.
+function score(label, value) {
+  if (value === null || value === undefined) {
+    return label === 'rerank' ? '' : ` <span class="miss">${label} —</span>`;
+  }
+  return ` <span>${label} ${value}</span>`;
 }
 
 function showPositions(positions, given) {
@@ -139,8 +158,8 @@ function showPositions(positions, given) {
       ${p.closed ? '<span class="tag">closed</span>' : ''}
       <div class="meta">${esc(p.employer || '')}${p.city ? ' · ' + esc(p.city) : ''}${
         p.country ? ', ' + esc(p.country) : ''}${p.closes ? ' · closes ' + esc(p.closes) : ''}</div>
-      <div class="sc">vector ${p.vector_score}${
-        p.rerank_score !== null ? ' · rerank ' + p.rerank_score : ''}</div>
+      <div class="sc">${score('rerank', p.rerank_score)}${score('vector', p.vector_score)}${
+        score('text', p.text_score)}</div>
     </div>`).join('');
 }
 

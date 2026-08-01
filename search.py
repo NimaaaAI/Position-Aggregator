@@ -38,9 +38,13 @@ RERANKER = "BAAI/bge-reranker-v2-m3"
 # so a question has to be asked as "query: " or the two are not comparable.
 QUERY = "query: "
 
-# How many the vector search hands to the reranker. It reads every pair in full, so
-# this is the expensive stage and is kept to the plausible candidates.
-RERANK_POOL = 40
+# How many positions a search returns by default. All of them get reranked, and the
+# best handful of those go to the model.
+#
+# 60 rather than a larger number because reranking is the expensive stage: the
+# cross-encoder reads each (question, advert) pair in full at roughly 25ms a pair,
+# so 60 costs about 1.5 seconds and 500 would cost twelve.
+DEFAULT_LIMIT = 60
 
 # Loaded once and reused. The web interface asks many questions in one process, and
 # reloading a model per question would dominate the response time.
@@ -89,22 +93,27 @@ def as_result(row, vector_score=None, text_score=None):
 def tsqueries(question):
     """Full-text queries for the question, strictest first.
 
-    Three tiers, each looser than the last, and the results are taken in that order:
+    Two tiers, strict then slightly looser, and the results are taken in that order:
 
         phrase   erc <-> starting <-> grant   the words adjacent, in order
-        all      erc & starting & grant       all present, anywhere
-        any      erc | starting | grant       at least one present
+        all      erc & starting & grant       all present, anywhere in the advert
 
-    Every tier earns its place. "any" alone is far too generous: Postgres's ts_rank
-    has no notion of "erc" being rare and "grant" being boilerplate, so an advert
-    mentioning a grant in its funding paragraph outranks the actual ERC Starting
-    Grant post. "all" fixes most of that but still cannot tell three words scattered
-    through a long advert from the phrase itself -- which is how a posting about
-    Aristotle, containing "ERC", "starting date" and "grant" in separate paragraphs,
-    ranked third for "ERC Starting Grant". Only the phrase tier separates those.
+    The phrase tier is what separates a real hit from a coincidence: a posting about
+    Aristotle contains "ERC", "starting date" and "grant" in three separate
+    paragraphs and so satisfies "all", but only the genuine ERC Starting Grant
+    positions have the words together.
 
-    "all" and "any" remain as fallbacks, because a whole question rarely appears
-    word for word anywhere.
+    There is deliberately no "any" tier ORing the words. It sounds like useful
+    breadth and is not: asked "I am looking for an AI or ML PhD position, show me
+    all of them", it becomes `i | am | looking | for | ... | position | ...`, and
+    every advert ever written contains "for" and "position". Full-text then returns
+    most of the database with every score at the same 0.054 noise floor, and rank
+    fusion promotes gender studies and post-colonial literature into a search for
+    machine learning.
+
+    So full-text abstains when it has nothing exact to say. That is the division of
+    labour: it matches literal strings, the vector search handles meaning, and a
+    question phrased as a sentence is a job for the latter.
 
     Only word characters survive the split, so nothing reaching to_tsquery can upset
     its parser.
@@ -114,7 +123,7 @@ def tsqueries(question):
         return []
     if len(words) == 1:
         return [words[0]]
-    return [" <-> ".join(words), " & ".join(words), " | ".join(words)]
+    return [" <-> ".join(words), " & ".join(words)]
 
 
 def fuse(rankings, k=60):
@@ -135,14 +144,14 @@ def fuse(rankings, k=60):
     return fused
 
 
-def retrieve(question, limit=10, open_only=False, rerank=False, pool=RERANK_POOL,
+def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
              hybrid=True):
     """Find the positions that best answer `question`.
 
-    Returns a list of dicts, best first. Two searches run: vector similarity, which
-    understands meaning, and full-text, which matches literal strings. Their results
-    are combined by rank fusion. With rerank=True the cross-encoder then reorders the
-    top `pool` candidates and the best `limit` are kept.
+    Returns `limit` dicts, best first. Two searches run: vector similarity, which
+    understands meaning, and full-text, which matches literal strings, and their
+    results are combined by rank fusion. With rerank=True the cross-encoder then
+    re-reads all of them and reorders.
 
     Each result carries every score it earned, so the stages can be compared.
     """
@@ -151,8 +160,7 @@ def retrieve(question, limit=10, open_only=False, rerank=False, pool=RERANK_POOL
         convert_to_numpy=True, show_progress_bar=False,
     )[0]
 
-    # The reranker can only improve on what it is given, so fetch more than we show.
-    wanted = max(limit, pool) if rerank else limit
+    wanted = int(limit)
     open_clause = "AND (closes_at IS NULL OR closes_at > now())" if open_only else ""
 
     found = {}

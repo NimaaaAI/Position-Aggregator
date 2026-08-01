@@ -35,10 +35,13 @@ app = FastAPI(title="Position search", docs_url=None, redoc_url=None)
 class Question(BaseModel):
     question: str
     model: str = ask.MODEL
-    show: int = 40
+    # How many the search returns and the reranker re-reads. All of these appear in
+    # the list; the best `context` of them are given to the model.
+    show: int = search.DEFAULT_LIMIT
     context: int = 10
     open_only: bool = False
     rerank: bool = True
+    hybrid: bool = True
 
 
 def as_json(item):
@@ -54,7 +57,12 @@ def as_json(item):
         "url": item["url"],
         "closes": closes.strftime("%d %b %Y") if closes else None,
         "closed": bool(closes and closes < datetime.now(UTC)),
-        "vector_score": round(item["vector_score"], 4),
+        # Any of these can be absent: a position found by one search and not the
+        # other has no score from the one that missed it, which is worth showing.
+        "vector_score": (round(item["vector_score"], 4)
+                         if item["vector_score"] is not None else None),
+        "text_score": (round(item["text_score"], 4)
+                       if item["text_score"] is not None else None),
         "rerank_score": (round(item["rerank_score"], 4)
                          if item["rerank_score"] is not None else None),
         "snippet": " ".join((item["description"] or "").split())[:300],
@@ -74,6 +82,7 @@ def api_search(request: Question):
     results = search.retrieve(
         request.question, limit=request.show,
         open_only=request.open_only, rerank=request.rerank,
+        hybrid=request.hybrid,
     )
     elapsed = time.perf_counter() - started
 
@@ -89,6 +98,7 @@ def api_chat(request: Question):
     results = search.retrieve(
         request.question, limit=request.show,
         open_only=request.open_only, rerank=request.rerank,
+        hybrid=request.hybrid,
     )
     retrieval_ms = round((time.perf_counter() - started) * 1000)
 
