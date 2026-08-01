@@ -18,14 +18,19 @@ sitemap  →  scrape.py    →  data/raw/<site>/<id>.html      done
              embed.py    →  embedding column               done
                                ↓
              search.py   →  ask questions                  done
+                               ↓
+             ask.py      →  a written answer               done
+                               ↓
+             chat.py     →  the same thing in a browser    done
 ```
 
 ## Status
 
-1,955 ads downloaded from academicpositions.com, 1,951 extracted, embedded and
-searchable. The four missing carry no `JobPosting` block.
+Working end to end. 1,955 ads downloaded from academicpositions.com, 1,951 extracted,
+embedded and searchable, with a web interface over the top. The four missing carry no
+`JobPosting` block.
 
-Not built yet: a language model over the results.
+Next: improving what the search finds.
 
 ## The nightly cycle
 
@@ -414,8 +419,65 @@ model.
 The work that decides answer quality — the embeddings and the reranker — happens on this
 machine for free.
 
+## The web interface
+
+```bash
+pip install fastapi uvicorn
+python chat.py            # opens http://127.0.0.1:8000
+```
+
+Binds to localhost only. There is no login because there is nobody else, and nothing is
+reachable from the network.
+
+The answer is on the left, everything the search found on the right — with both scores
+per position and the ones given to the model highlighted. Two buttons:
+
+- **Search only** — retrieval with no model. No API key needed, no cost. This is how to
+  watch the search work on its own.
+- **Ask** — the full pipeline.
+
+Timings and token counts appear under each answer, so the cost of a question is never a
+mystery.
+
+`chat.py` is a thin wrapper: retrieval is `search.retrieve()`, the answer is
+`ask.answer()`. The browser and the terminal run the same code and cannot drift apart.
+
+### Citations are links
+
+The model writes `[3]`; the page turns that into a link using the URL from the database
+row. The model never handles an address, so it cannot mistype one — and the prose stays
+readable instead of carrying 120-character URLs.
+
+On the terminal `ask.py` still pastes the URL inline, because there is nowhere else to
+put it.
+
+### Three stages, each catching what the last one missed
+
+Asked for *"an AI or ML PhD position in Europe"*, the reranker put **Staff Scientist –
+Embedded AI** first, scoring 0.9128 — the highest of all forty. The model moved it down,
+saying it is a research post rather than a PhD, and kept it visible rather than dropping
+it.
+
+| Stage | Judges | Cost |
+|---|---|---|
+| Vector search | roughly on topic | free, milliseconds |
+| Reranker | genuinely on topic | free, ~1 second |
+| Language model | whether it is the *kind* of thing asked for | ~$0.0008 |
+
+The reranker matched the subject perfectly and missed the job type. Nothing before the
+model could have caught that, and nothing after it would have been cheap enough to.
+
 ## Next
 
-**A local web interface.** The same pipeline behind FastAPI, so questions can be asked in
-a browser, with the retrieval visible next to the answer and chat history kept per
-conversation.
+**Better retrieval.** The pipeline works end to end; the remaining gains are in what gets
+found, not in what happens afterwards. Known weaknesses:
+
+- **Exact strings.** Vector search is poor at grant codes and acronyms — MSCA, ERC — since
+  an abbreviation carries no meaning to embed. Postgres's built-in full-text search would
+  cover it with no new dependency.
+- **Only the opening of each advert is embedded.** `embed_text` holds the first ~1,500
+  characters, so anything stated further down is invisible to search. Splitting long
+  adverts into several vectors would fix it.
+- **Position type is not extracted.** PhD, postdoc, professor and staff scientist are all
+  just text, which is why a Staff Scientist post can top a PhD search. Pulling that out
+  into a column would allow it to be filtered rather than merely explained afterwards.
