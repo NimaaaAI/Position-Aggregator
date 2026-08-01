@@ -272,12 +272,62 @@ python search.py "funded PhD in machine learning"
 python search.py "PhD in artificial intelligence for medical imaging" --rerank
 python search.py "quantum computing" --open --limit 20
 python search.py "doktorand maskininlärning"        # any language works
+python search.py "ERC Starting Grant" --no-hybrid   # vector only, for comparison
 ```
 
 `--open` hides positions whose closing date has passed; without it they appear marked
 `[CLOSED]`.
 
-### Two stages, and why the second one matters
+### Two searches at once
+
+Every question runs through both a vector search and Postgres full-text search, and the
+two rankings are combined by reciprocal rank fusion.
+
+They fail in opposite directions. Embeddings capture meaning, which is exactly why they
+are useless on strings that have none — a grant code, an acronym, a scheme name. Asked
+for **"ERC Starting Grant"**, vector search alone returned *Starter Grant Programme 2027*
+and a wind-farm PhD in the top two, with the real answer fourth. It understood "grant
+funding for research" and had no way to know that ERC is an institution and *Starting*
+distinguishes it from *Consolidator*.
+
+With full-text added, the correct position is first. Same for **MSCA**: fourth to first.
+
+The text side runs three queries, strictest first, taking results in that order:
+
+| tier | query | matches |
+|---|---|---|
+| phrase | `erc <-> starting <-> grant` | the words adjacent, in order |
+| all | `erc & starting & grant` | all present, anywhere in the advert |
+| any | `erc \| starting \| grant` | at least one present |
+
+All three are needed. `any` alone is far too generous — `ts_rank` has no notion of "erc"
+being rare and "grant" being boilerplate, so any advert mentioning a grant outranks the
+real thing. `all` and `phrase` fix that, and the looser tiers remain as fallbacks because
+a whole question rarely appears anywhere word for word.
+
+Fusion compares *positions* rather than scores, which matters because a cosine similarity
+of 0.85 and a `ts_rank` of 0.09 are not on any common scale and cannot simply be added.
+
+`--no-hybrid` turns the text side off, for comparing the two.
+
+### Results that look wrong and are not
+
+Searching *"ERC Starting Grant"* returns a postdoc on **Aristotle's De Anima**. That looks
+like a failure until you read the advert:
+
+> *"…embedded in several projects: the ERC Starting Grant FitMA at KU Leuven, the ERC
+> Advanced Grant TIDA at Universität Tübingen…"*
+
+It is funded by an ERC Starting Grant. Someone searching that phrase wants positions
+funded by one, and the subject is beside the point. Likewise a *"MSCA"* search returns
+adverts about error-correcting codes and composite materials — both MSCA-funded, both
+naming the scheme only in the small print.
+
+This is the thing full-text does that embeddings structurally cannot: find a funding
+scheme mentioned in a paragraph that has nothing to do with the work itself. Such results
+were dismissed as noise three times during development and were correct every time.
+
+### Two more stages, and why they matter
 
 The vector search compares your question against all 1,951 positions at once and is
 effectively instant. The reranker, behind `--rerank`, then re-reads the best 50
@@ -472,9 +522,6 @@ model could have caught that, and nothing after it would have been cheap enough 
 **Better retrieval.** The pipeline works end to end; the remaining gains are in what gets
 found, not in what happens afterwards. Known weaknesses:
 
-- **Exact strings.** Vector search is poor at grant codes and acronyms — MSCA, ERC — since
-  an abbreviation carries no meaning to embed. Postgres's built-in full-text search would
-  cover it with no new dependency.
 - **Only the opening of each advert is embedded.** `embed_text` holds the first ~1,500
   characters, so anything stated further down is invisible to search. Splitting long
   adverts into several vectors would fix it.

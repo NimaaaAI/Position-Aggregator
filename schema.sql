@@ -61,4 +61,32 @@ CREATE INDEX IF NOT EXISTS positions_open_idx     ON positions (closed_at)
 CREATE INDEX IF NOT EXISTS positions_embedding_idx
     ON positions USING hnsw (embedding vector_cosine_ops);
 
+-- Full-text search, to sit alongside the vector search.
+--
+-- Embeddings capture meaning, which is exactly why they are bad at strings that
+-- have none: "MSCA", "ERC", a grant code, a project acronym. Those need matching
+-- literally, and Postgres does that without any extension.
+--
+-- The 'simple' configuration, not 'english': it does no stemming, which is what we
+-- want here. The adverts arrive in Swedish, German, French, Dutch and Norwegian, so
+-- English stemming rules would be wrong for most of them -- and an acronym should
+-- be matched exactly rather than stemmed at all.
+--
+-- Generated and stored, so it is maintained by the database and cannot fall out of
+-- step with the text it indexes.
+ALTER TABLE positions
+    ADD COLUMN IF NOT EXISTS tsv tsvector
+    GENERATED ALWAYS AS (
+        to_tsvector(
+            'simple',
+            coalesce(title, '') || ' ' ||
+            coalesce(employer, '') || ' ' ||
+            coalesce(city, '') || ' ' ||
+            coalesce(country, '') || ' ' ||
+            coalesce(description, '')
+        )
+    ) STORED;
+
+CREATE INDEX IF NOT EXISTS positions_tsv_idx ON positions USING gin (tsv);
+
 ALTER TABLE positions OWNER TO positions;

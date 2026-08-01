@@ -16,6 +16,7 @@ to the query or the ranking happens in one place rather than three.
 
 import argparse
 import os
+import re
 import sys
 import textwrap
 from datetime import UTC, datetime
@@ -73,12 +74,77 @@ def reranker():
     return _reranker
 
 
-def retrieve(question, limit=10, open_only=False, rerank=False, pool=RERANK_POOL):
+COLUMNS = """source_id, title, employer, city, country, closes_at, url, description"""
+
+
+def as_result(row, vector_score=None, text_score=None):
+    return {
+        "source_id": row[0], "title": row[1], "employer": row[2], "city": row[3],
+        "country": row[4], "closes_at": row[5], "url": row[6], "description": row[7],
+        "vector_score": vector_score, "text_score": text_score,
+        "rerank_score": None, "fused_score": 0.0,
+    }
+
+
+def tsqueries(question):
+    """Full-text queries for the question, strictest first.
+
+    Three tiers, each looser than the last, and the results are taken in that order:
+
+        phrase   erc <-> starting <-> grant   the words adjacent, in order
+        all      erc & starting & grant       all present, anywhere
+        any      erc | starting | grant       at least one present
+
+    Every tier earns its place. "any" alone is far too generous: Postgres's ts_rank
+    has no notion of "erc" being rare and "grant" being boilerplate, so an advert
+    mentioning a grant in its funding paragraph outranks the actual ERC Starting
+    Grant post. "all" fixes most of that but still cannot tell three words scattered
+    through a long advert from the phrase itself -- which is how a posting about
+    Aristotle, containing "ERC", "starting date" and "grant" in separate paragraphs,
+    ranked third for "ERC Starting Grant". Only the phrase tier separates those.
+
+    "all" and "any" remain as fallbacks, because a whole question rarely appears
+    word for word anywhere.
+
+    Only word characters survive the split, so nothing reaching to_tsquery can upset
+    its parser.
+    """
+    words = re.findall(r"[^\W_]+", question.lower(), flags=re.UNICODE)
+    if not words:
+        return []
+    if len(words) == 1:
+        return [words[0]]
+    return [" <-> ".join(words), " & ".join(words), " | ".join(words)]
+
+
+def fuse(rankings, k=60):
+    """Reciprocal rank fusion: combine several rankings into one.
+
+    Each list contributes 1/(k+rank) per item, so something placed well by both
+    searches beats something placed well by only one. It compares *positions* rather
+    than scores, which matters because a cosine similarity of 0.85 and a ts_rank of
+    0.09 are not on any common scale and cannot simply be added.
+
+    k=60 is the value from the original paper; it damps the difference between the
+    top few places so that rank 1 does not overwhelm everything else.
+    """
+    fused = {}
+    for ranking in rankings:
+        for place, key in enumerate(ranking, start=1):
+            fused[key] = fused.get(key, 0.0) + 1.0 / (k + place)
+    return fused
+
+
+def retrieve(question, limit=10, open_only=False, rerank=False, pool=RERANK_POOL,
+             hybrid=True):
     """Find the positions that best answer `question`.
 
-    Returns a list of dicts, best first. With rerank=True the vector search fetches
-    `pool` candidates and the cross-encoder reorders them, keeping the best `limit`.
-    Each result carries both scores so the two stages can be compared.
+    Returns a list of dicts, best first. Two searches run: vector similarity, which
+    understands meaning, and full-text, which matches literal strings. Their results
+    are combined by rank fusion. With rerank=True the cross-encoder then reorders the
+    top `pool` candidates and the best `limit` are kept.
+
+    Each result carries every score it earned, so the stages can be compared.
     """
     vector = encoder().encode(
         [QUERY + question], normalize_embeddings=True,
@@ -89,30 +155,57 @@ def retrieve(question, limit=10, open_only=False, rerank=False, pool=RERANK_POOL
     wanted = max(limit, pool) if rerank else limit
     open_clause = "AND (closes_at IS NULL OR closes_at > now())" if open_only else ""
 
+    found = {}
+    vector_order, text_order = [], []
+
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
+
         # <=> is pgvector's cosine distance: 0 is identical, 2 is opposite.
         # Subtracting from 1 turns it into a similarity, which reads more naturally.
-        rows = conn.execute(
+        for row in conn.execute(
             f"""
-            SELECT source_id, title, employer, city, country, closes_at, url,
-                   description, 1 - (embedding <=> %s) AS score
+            SELECT {COLUMNS}, 1 - (embedding <=> %s) AS score
               FROM positions
              WHERE embedding IS NOT NULL {open_clause}
              ORDER BY embedding <=> %s
              LIMIT %s
             """,
             (vector, vector, wanted),
-        ).fetchall()
+        ).fetchall():
+            found[row[0]] = as_result(row, vector_score=float(row[8]))
+            vector_order.append(row[0])
 
-    results = [
-        {
-            "source_id": row[0], "title": row[1], "employer": row[2],
-            "city": row[3], "country": row[4], "closes_at": row[5], "url": row[6],
-            "description": row[7], "vector_score": float(row[8]), "rerank_score": None,
-        }
-        for row in rows
-    ]
+        if hybrid:
+            # Strict query first, then loose to top up. Anything already found by
+            # the stricter query keeps its higher place: text_order is built in
+            # order, and a position is only added the first time it appears.
+            for query in tsqueries(question):
+                if len(text_order) >= wanted:
+                    break
+                for row in conn.execute(
+                    f"""
+                    SELECT {COLUMNS}, ts_rank(tsv, to_tsquery('simple', %s)) AS score
+                      FROM positions
+                     WHERE tsv @@ to_tsquery('simple', %s) {open_clause}
+                     ORDER BY score DESC
+                     LIMIT %s
+                    """,
+                    (query, query, wanted - len(text_order)),
+                ).fetchall():
+                    if row[0] in text_order:
+                        continue
+                    if row[0] in found:
+                        found[row[0]]["text_score"] = float(row[8])
+                    else:
+                        found[row[0]] = as_result(row, text_score=float(row[8]))
+                    text_order.append(row[0])
+
+    fused = fuse([vector_order, text_order])
+    for key, score in fused.items():
+        found[key]["fused_score"] = score
+
+    results = sorted(found.values(), key=lambda item: -item["fused_score"])[:wanted]
 
     if rerank and results:
         # The cross-encoder reads the question and the advert together, rather than
@@ -138,10 +231,17 @@ def describe(item):
     if closes and closes < datetime.now(UTC):
         when += "  [CLOSED]"
 
-    if item["rerank_score"] is not None:
-        marks = f"{item['rerank_score']:.3f} rerank / {item['vector_score']:.3f} vector"
-    else:
-        marks = f"{item['vector_score']:.3f}"
+    # A position can be found by one search and not the other, so any of these may
+    # be absent. "--" says the search did not return it, which is itself worth
+    # seeing: it shows which of the two found a result the other one missed.
+    def mark(label, value, places=3):
+        return f"{label} {value:.{places}f}" if value is not None else f"{label} --"
+
+    marks = " / ".join(filter(None, [
+        mark("rerank", item["rerank_score"]) if item["rerank_score"] is not None else None,
+        mark("vector", item["vector_score"]),
+        mark("text", item["text_score"]),
+    ]))
 
     lines = [
         f"[{marks}]  {item['title']}",
@@ -161,11 +261,13 @@ def main():
                         help="only positions whose closing date has not passed")
     parser.add_argument("--rerank", action="store_true",
                         help="re-read the best candidates with the cross-encoder")
+    parser.add_argument("--no-hybrid", action="store_true",
+                        help="vector search only, without full-text. For comparison")
     args = parser.parse_args()
 
     results = retrieve(
-        args.question, limit=args.limit,
-        open_only=args.open_only, rerank=args.rerank,
+        args.question, limit=args.limit, open_only=args.open_only,
+        rerank=args.rerank, hybrid=not args.no_hybrid,
     )
     if not results:
         sys.exit("nothing found")
