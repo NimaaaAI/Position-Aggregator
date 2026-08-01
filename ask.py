@@ -52,9 +52,18 @@ shown.
 
 Order them by how well they fit, best first, and group them if that helps to read:
 a close match, a partial one, something adjacent, and at the end the ones that do not
-really fit. For each, one or two lines: what it is, and how it relates to the question.
-For a poor fit, say plainly that it is a poor fit and why -- one line is enough. Never
-silently omit it.
+really fit.
+
+Every entry gives, in this order:
+
+    [n] the title
+        employer, city, country
+        closes on the date given, or say no closing date was given
+        one or two lines on what it is and how it relates to the question
+
+The employer, the place and the closing date are the facts someone needs in order to
+act, so they belong in every entry, including the poor fits. For a poor fit, say
+plainly that it is a poor fit and why -- one line is enough. Never silently omit it.
 
 Someone asking about AI wants to hear about every position involving AI, in any field,
 and will decide for themselves whether AI in robotics or AI in biology suits them.
