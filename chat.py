@@ -42,6 +42,8 @@ class Question(BaseModel):
     open_only: bool = False
     rerank: bool = True
     hybrid: bool = True
+    # "phd", "postdoc", ... or None for any. Applied before ranking.
+    position_type: str | None = None
 
 
 def as_json(item):
@@ -82,7 +84,7 @@ def api_search(request: Question):
     results = search.retrieve(
         request.question, limit=request.show,
         open_only=request.open_only, rerank=request.rerank,
-        hybrid=request.hybrid,
+        hybrid=request.hybrid, position_type=request.position_type or None,
     )
     elapsed = time.perf_counter() - started
 
@@ -98,7 +100,7 @@ def api_chat(request: Question):
     results = search.retrieve(
         request.question, limit=request.show,
         open_only=request.open_only, rerank=request.rerank,
-        hybrid=request.hybrid,
+        hybrid=request.hybrid, position_type=request.position_type or None,
     )
     retrieval_ms = round((time.perf_counter() - started) * 1000)
 
