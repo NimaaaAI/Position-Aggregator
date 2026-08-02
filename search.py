@@ -145,13 +145,18 @@ def fuse(rankings, k=60):
 
 
 def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
-             hybrid=True):
+             hybrid=True, position_type=None):
     """Find the positions that best answer `question`.
 
     Returns `limit` dicts, best first. Two searches run: vector similarity, which
     understands meaning, and full-text, which matches literal strings, and their
     results are combined by rank fusion. With rerank=True the cross-encoder then
     re-reads all of them and reorders.
+
+    position_type ("phd", "postdoc", ...) restricts the search before any ranking
+    happens. That is the point of it: ranking cannot tell a PhD post from a postdoc,
+    because every advert on a subject scores about the same whatever the job, so the
+    only way to ask for one is to exclude the others up front.
 
     Each result carries every score it earned, so the stages can be compared.
     """
@@ -162,6 +167,11 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
 
     wanted = int(limit)
     open_clause = "AND (closes_at IS NULL OR closes_at > now())" if open_only else ""
+    # Applied inside the SQL rather than to the results, so the shortlist is drawn
+    # from PhD positions only rather than filtered down to whichever happened to
+    # survive a general ranking.
+    type_clause = "AND %(type)s = ANY(position_type)" if position_type else ""
+    params = {"vector": vector, "wanted": wanted, "type": position_type}
 
     found = {}
     vector_order, text_order = [], []
@@ -173,13 +183,13 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
         # Subtracting from 1 turns it into a similarity, which reads more naturally.
         for row in conn.execute(
             f"""
-            SELECT {COLUMNS}, 1 - (embedding <=> %s) AS score
+            SELECT {COLUMNS}, 1 - (embedding <=> %(vector)s) AS score
               FROM positions
-             WHERE embedding IS NOT NULL {open_clause}
-             ORDER BY embedding <=> %s
-             LIMIT %s
+             WHERE embedding IS NOT NULL {open_clause} {type_clause}
+             ORDER BY embedding <=> %(vector)s
+             LIMIT %(wanted)s
             """,
-            (vector, vector, wanted),
+            params,
         ).fetchall():
             found[row[0]] = as_result(row, vector_score=float(row[8]))
             vector_order.append(row[0])
@@ -193,13 +203,15 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
                     break
                 for row in conn.execute(
                     f"""
-                    SELECT {COLUMNS}, ts_rank(tsv, to_tsquery('simple', %s)) AS score
+                    SELECT {COLUMNS},
+                           ts_rank(tsv, to_tsquery('simple', %(q)s)) AS score
                       FROM positions
-                     WHERE tsv @@ to_tsquery('simple', %s) {open_clause}
+                     WHERE tsv @@ to_tsquery('simple', %(q)s)
+                           {open_clause} {type_clause}
                      ORDER BY score DESC
-                     LIMIT %s
+                     LIMIT %(remaining)s
                     """,
-                    (query, query, wanted - len(text_order)),
+                    {**params, "q": query, "remaining": wanted - len(text_order)},
                 ).fetchall():
                     if row[0] in text_order:
                         continue
@@ -271,11 +283,16 @@ def main():
                         help="re-read the best candidates with the cross-encoder")
     parser.add_argument("--no-hybrid", action="store_true",
                         help="vector search only, without full-text. For comparison")
+    parser.add_argument("--type", dest="position_type",
+                        choices=["phd", "postdoc", "professor", "lecturer",
+                                 "researcher", "engineer", "student", "support"],
+                        help="only this kind of post. Applied before ranking")
     args = parser.parse_args()
 
     results = retrieve(
         args.question, limit=args.limit, open_only=args.open_only,
         rerank=args.rerank, hybrid=not args.no_hybrid,
+        position_type=args.position_type,
     )
     if not results:
         sys.exit("nothing found")
