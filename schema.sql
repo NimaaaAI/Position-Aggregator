@@ -61,6 +61,25 @@ CREATE INDEX IF NOT EXISTS positions_open_idx     ON positions (closed_at)
 CREATE INDEX IF NOT EXISTS positions_embedding_idx
     ON positions USING hnsw (embedding vector_cosine_ops);
 
+-- What kind of post this is: phd, postdoc, professor and so on.
+--
+-- An array rather than a single value, because plenty of adverts genuinely offer
+-- both -- "PhD or postdoctoral position", "Several fully funded PhD / Post-Doctoral
+-- Positions". Filed as one or the other they would vanish from half the searches
+-- they belong in.
+--
+-- This exists because ranking cannot supply it. Every AI-related advert scores
+-- between 0.82 and 0.85 cosine similarity whatever the job, since the subject is
+-- the whole document and the job type is one word in a title. Counted by hand,
+-- 52 positions have both "PhD" and something AI-related in the title; a search for
+-- exactly that surfaced 7 of them in the top 40. A column can be filtered; a hope
+-- cannot.
+ALTER TABLE positions
+    ADD COLUMN IF NOT EXISTS position_type text[];
+
+CREATE INDEX IF NOT EXISTS positions_type_idx ON positions USING gin (position_type);
+
+
 -- Full-text search, to sit alongside the vector search.
 --
 -- Embeddings capture meaning, which is exactly why they are bad at strings that
