@@ -11,31 +11,59 @@ of downloading.
 ## The pipeline
 
 ```
-sitemap  →  scrape.py    →  data/raw/<site>/<id>.html      done
+sitemap  →  scrape.py    →  data/raw/<site>/<id>.html   ⎫
+                               ↓                        ⎬  update.py
+             extract.py  →  positions table             ⎪  runs these three
+                               ↓                        ⎭
+             embed.py    →  embedding column
                                ↓
-             extract.py  →  positions table                done
+             search.py   →  vector + full-text, reranked
                                ↓
-             embed.py    →  embedding column               done
+             ask.py      →  a written answer
                                ↓
-             search.py   →  ask questions                  done
-                               ↓
-             ask.py      →  a written answer               done
-                               ↓
-             chat.py     →  the same thing in a browser    done
+             chat.py     →  the same thing in a browser
 ```
 
 ## Status
 
-Working end to end. 1,955 ads downloaded from academicpositions.com, 1,951 extracted,
+Working end to end. 1,976 ads downloaded from academicpositions.com, 1,972 extracted,
 embedded and searchable, with a web interface over the top. The four missing carry no
 `JobPosting` block.
 
-Next: improving what the search finds.
+Not automated yet — `python update.py` is run by hand. A `launchd` job calling it nightly
+is the remaining step.
 
-## The nightly cycle
+## Keeping it up to date
 
-Four commands, in this order. Each skips work already done, so a normal night is a
-couple of minutes.
+One command:
+
+```bash
+python update.py              # download what is new, extract it, embed it
+python update.py --no-scrape  # local steps only, after changing a parser
+python update.py --quiet      # summary only, for a scheduler
+```
+
+A real run took 75 seconds: 21 new positions and 123 closures found in the sitemap, 21
+pages downloaded, 21 extracted, 21 embedded.
+
+```
+done in 75s
+  positions   1972  (+21)
+  embedded    1972  (+21)
+  still open  1687
+```
+
+Every step skips work it has already done, so a normal run handles only what has appeared
+since the last one. The before-and-after counts are the check: if `embedded` lags
+`positions`, something went wrong in the last step and it says so.
+
+`update.py` runs the three scripts as separate processes rather than importing them. Each
+stays a program in its own right, runnable and debuggable alone, and their output appears
+exactly as it would by hand. A failing step does not stop the others — if downloading
+breaks, extracting and embedding still finish whatever is on disk, and the summary names
+what failed.
+
+The individual steps, if you want to run one on its own:
 
 ```bash
 python scrape.py  --update    # what is new, what has closed, download the new
@@ -44,12 +72,11 @@ python embed.py   --all       # embed only the rows without a vector
 python extract.py --check     # report, to confirm it all landed
 ```
 
-A real run looked like this: 69 new and 70 closed found in the sitemap, 69 pages
-downloaded, 69 rows extracted, 69 embedded in 2.3 seconds.
-
 Ads that leave the sitemap have closed. Their HTML stays on disk and their row stays in
 the table — the closing date already says they are past, and it is useful to be able to
-see a position you missed.
+see a position you missed. This accumulates: after a few runs there were 1,976 files on
+disk against 1,786 ads in the sitemap, the difference being everything that has closed
+since collection started.
 
 ## Setup
 
