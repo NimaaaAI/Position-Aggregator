@@ -92,6 +92,15 @@ main{max-width:86rem;margin:0 auto;padding:1.2rem;display:grid;
     </div>
     <div class="bar opts">
       <select id="model"></select>
+      <select id="ptype" title="Applied before ranking, not after: PhD positions then compete only with other PhD positions.">
+        <option value="">any kind of post</option>
+        <option value="phd">PhD only</option>
+        <option value="postdoc">Postdoc only</option>
+        <option value="professor">Professor only</option>
+        <option value="lecturer">Lecturer only</option>
+        <option value="researcher">Researcher only</option>
+        <option value="engineer">Engineer only</option>
+      </select>
       <label>retrieve <input id="show" type="number" value="60" min="1" max="500">
         <span class="hint" title="How many the search returns and the reranker re-reads. All of them are listed on the right. Reranking costs about 25ms each, so 60 takes ~1.5s and 500 takes ~12s.">?</span>
       </label>
@@ -131,6 +140,7 @@ function body() {
     context: +$('#ctx').value || 10,
     open_only: $('#openonly').checked,
     hybrid: $('#hybrid').checked,
+    position_type: $('#ptype').value || null,
     rerank: true,
   };
 }
