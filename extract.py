@@ -118,6 +118,106 @@ def read(path):
     }
 
 
+# What kind of post it is, read from the title alone. The adverts arrive in a dozen
+# languages, so the patterns have to as well -- these are taken from titles actually
+# present in the data.
+#
+# The title only, never the description. Falling back to the description when the
+# title said nothing looked helpful and was not: an advert for an Institute Director
+# came out as both PhD and postdoc because the director supervises them, a summer
+# school likewise, and a Norwegian lecturer post was filed as "student" because its
+# advert asks for a master's degree. A description mentions these words for a dozen
+# reasons that have nothing to do with what is being advertised.
+#
+# Leaving a position untyped is the better failure. It then simply does not appear
+# in a filtered search, whereas a wrong type actively pollutes one.
+POSTDOC = re.compile(
+    r"post[-\s]?doc|post[-\s]?doctoral|postdoktor|postdoctoraal|"
+    r"post[-\s]?doctorant|chercheur post",
+    re.IGNORECASE,
+)
+
+# "postdoctoral" must not read as "doctoral". Rather than fight it with lookarounds
+# -- "postdoctoral" is safe but "post-doctoral" is not, because the hyphen is a word
+# boundary -- postdoc matches are blanked out before this is applied.
+PHD = re.compile(
+    r"\b(ph\.?\s?d\.?\w*|doctoral|doctorate|pre[-\s]?doctoral|"
+    r"doctoraal|doctoraats\w*|promovendus|promovendi|aio|"          # Dutch
+    r"doktorand\w*|doktorgrad\w*|stipendiat\w*|"                    # Nordic
+    r"promotionsstelle|promovierend\w*|"                            # German
+    r"doctorant\w*|"                                                # French
+    r"dottorand\w*|dottorato|"                                      # Italian
+    r"doctorad\w*|doctores|predoctoral\w*|"                         # Spanish
+    r"v[aä]it[oö]skirja\w*|tohtorikoulutettava\w*)\b",              # Finnish
+    re.IGNORECASE,
+)
+
+PROFESSOR = re.compile(
+    r"\b(professor\w*|professur\w*|hoogleraar|professeur\w*|professore|"
+    r"catedr[aá]tico\w*|tenure[-\s]track|"
+    r"f[oø]rsteamanuensis|amanuensis)\b",          # Norwegian associate professor
+    re.IGNORECASE,
+)
+
+LECTURER = re.compile(
+    r"\b(lecturer\w*|reader|adjunkt\w*|universit[aä]tslektor|universitetslektor|"
+    r"h[oø]yskolelektor|h[oø]gskolelektor|lektor\w*|"
+    r"ma[iî]tre de conf[eé]rences|docent\w*)\b",
+    re.IGNORECASE,
+)
+
+# Only consulted when none of the above matched, so "doctoral researcher" stays a
+# PhD rather than becoming both a PhD and a researcher.
+FALLBACKS = [
+    ("researcher", re.compile(
+        r"\b(research(er|ers)?|research fellow|research associate|staff scientist|"
+        r"scientist\w*|forskare|forsker|onderzoeker|wissenschaftliche\w*|"
+        r"chercheur\w*|tutkija|tutkij\w*)\b", re.IGNORECASE)),
+    ("engineer", re.compile(
+        r"\b(engineer\w*|ingenieur\w*|ingenj[oö]r\w*|developer|programmer|"
+        r"programmerare|programmeur|architect)\b", re.IGNORECASE)),
+    ("student", re.compile(
+        r"\b(intern|internship|undergraduate|studentassistent\w*|"
+        r"student assistant|summer school)\b", re.IGNORECASE)),
+    ("support", re.compile(
+        r"\b(technician|technicus|administrator|coordinator|secretar\w+|"
+        r"manager|officer|librarian|analyst|assistent\w*|specialist\w*|"
+        r"asiantuntija)\b", re.IGNORECASE)),
+]
+
+
+def classify(title, description=None):
+    """Which kinds of post the title advertises. Returns a sorted list, possibly
+    empty. `description` is accepted and ignored -- see the note above the patterns."""
+    if not title:
+        return []
+
+    found = set()
+
+    # Blank out postdoc mentions before looking for PhD, so "post-doctoral" cannot
+    # be read as "doctoral". The hyphen is a word boundary, so a plain \b would.
+    without_postdoc = POSTDOC.sub(" ", title)
+
+    if POSTDOC.search(title):
+        found.add("postdoc")
+    if PHD.search(without_postdoc):
+        found.add("phd")
+    if PROFESSOR.search(title):
+        found.add("professor")
+    if LECTURER.search(title):
+        found.add("lecturer")
+
+    # Only when nothing above matched, so "doctoral researcher" stays a PhD rather
+    # than becoming a PhD and a researcher at once.
+    if not found:
+        for label, pattern in FALLBACKS:
+            if pattern.search(title):
+                found.add(label)
+                break
+
+    return sorted(found)
+
+
 UPSERT = """
 INSERT INTO positions (
     source, source_id, url, title, employer, city, country, street, postcode,
@@ -154,6 +254,104 @@ def day(value, fmt="%Y-%m-%d"):
     closing date at all, and a missing date should read as missing rather than
     stop the report."""
     return value.strftime(fmt) if value else "(none)"
+
+
+def classify_all(force=False):
+    """Fill position_type for every row. Reads the database, writes one column."""
+    where = "" if force else " WHERE position_type IS NULL"
+    with psycopg.connect(DSN) as conn:
+        rows = conn.execute(
+            f"SELECT source, source_id, title, description FROM positions{where}"
+        ).fetchall()
+
+        if not rows:
+            print("every position already has a type -- use --force to redo them")
+            return
+
+        print(f"classifying {len(rows)} position(s)")
+        counts, none_found = {}, []
+        for source, source_id, title, description in rows:
+            types = classify(title, description)
+            if not types:
+                none_found.append(title)
+            for label in types or ["(none)"]:
+                counts[label] = counts.get(label, 0) + 1
+            conn.execute(
+                "UPDATE positions SET position_type = %s "
+                " WHERE source = %s AND source_id = %s",
+                (types, source, source_id),
+            )
+        conn.commit()
+
+    print()
+    for label in sorted(counts, key=lambda k: -counts[k]):
+        print(f"  {label:12} {counts[label]:>5}")
+    if none_found:
+        print(f"\n  {len(none_found)} could not be placed, for example:")
+        for title in none_found[:5]:
+            print(f"    {(title or '')[:74]}")
+
+
+def check_types():
+    """What the classifier decided, with samples, so it can be judged."""
+    with psycopg.connect(DSN) as conn:
+        total = conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+        typed = conn.execute(
+            "SELECT count(*) FROM positions WHERE position_type <> '{}'"
+        ).fetchone()[0]
+        print(f"\n{typed} of {total} positions have a type\n")
+
+        for label, number in conn.execute(
+            "SELECT unnest(position_type) AS t, count(*) FROM positions"
+            " GROUP BY 1 ORDER BY 2 DESC"
+        ).fetchall():
+            print(f"  {label:12} {number:>5}")
+
+        print("\n--- both PhD and postdoc")
+        for (title,) in conn.execute(
+            "SELECT left(title, 88) FROM positions"
+            " WHERE position_type @> ARRAY['phd','postdoc'] LIMIT 5"
+        ).fetchall():
+            print(f"    {title}")
+
+        # The measurement this column exists for: AI-related PhD positions, counted
+        # by a hand-written pattern independent of the classifier.
+        #
+        # The "post" exclusion is the whole point. A word boundary sits inside
+        # "post-doctoral", so a plain \mdoctoral counts postdocs as PhDs -- which is
+        # exactly the trap classify() blanks out postdoc mentions to avoid. Written
+        # without it, this test reported 53 targets and 4 misses, and all four
+        # "misses" were postdocs the classifier had filed correctly.
+        phd_like = (
+            "title !~* 'post[-\\s]?doc'"
+            " AND title ~* '\\m(phd|ph\\.d|doctoral|doctorate|doktorand|doctorant)'"
+            " AND title ~* '\\m(ai|ml|artificial intelligence|machine learning|"
+            "deep learning|neural|llm|nlp|computer vision|data science)\\M'"
+        )
+        target = conn.execute(
+            f"SELECT count(*) FROM positions WHERE {phd_like}"
+        ).fetchone()[0]
+        caught = conn.execute(
+            f"SELECT count(*) FROM positions"
+            f" WHERE 'phd' = ANY(position_type) AND {phd_like}"
+        ).fetchone()[0]
+        print("\n--- the test case")
+        print(f"    {target} AI/ML PhD positions by hand-written pattern")
+        print(f"    {caught} of them classified as phd  "
+              f"({'all' if caught == target else 'MISSING ' + str(target - caught)})")
+
+        print("\n--- samples per type")
+        for label, in conn.execute(
+            "SELECT DISTINCT unnest(position_type) FROM positions ORDER BY 1"
+        ).fetchall():
+            samples = conn.execute(
+                "SELECT left(title, 70) FROM positions"
+                " WHERE %s = ANY(position_type) ORDER BY random() LIMIT 3",
+                (label,),
+            ).fetchall()
+            print(f"\n  {label}")
+            for (title,) in samples:
+                print(f"    {title}")
 
 
 def check():
@@ -240,15 +438,27 @@ parser.add_argument("--one", action="store_true", help="read one file and print 
 parser.add_argument("--all", action="store_true", help="read every file into the table")
 parser.add_argument("--check", action="store_true",
                     help="report what is in the table so it can be verified")
+parser.add_argument("--types", action="store_true",
+                    help="work out what kind of post each one is (phd, postdoc, ...)")
+parser.add_argument("--check-types", action="store_true",
+                    help="report what the type classifier decided")
 parser.add_argument("--force", action="store_true",
-                    help="with --all, re-read files that were already extracted")
+                    help="with --all or --types, redo work already done")
 args = parser.parse_args()
 
-if not (args.one or args.all or args.check):
-    sys.exit("pick one: --one, --all or --check")
+if not (args.one or args.all or args.check or args.types or args.check_types):
+    sys.exit("pick one: --one, --all, --types, --check or --check-types")
 
 if args.check:
     check()
+    sys.exit(0)
+
+if args.types:
+    classify_all(force=args.force)
+    sys.exit(0)
+
+if args.check_types:
+    check_types()
     sys.exit(0)
 
 sites = yaml.safe_load((ROOT / "sites.yml").read_text(encoding="utf-8"))["sites"]
