@@ -30,7 +30,12 @@ DSN = os.getenv("DATABASE_URL", "postgresql://positions:positions@localhost:5432
 STEPS = [
     ("download", ["scrape.py", "--update"]),
     ("extract", ["extract.py", "--all"]),
+    ("classify", ["extract.py", "--types"]),
+    # Recounted each time, because which words are too common to search for is a
+    # property of the corpus and the corpus keeps changing.
+    ("stopwords", ["extract.py", "--stopwords"]),
     ("embed", ["embed.py", "--all"]),
+    ("chunk", ["embed.py", "--chunks"]),
 ]
 
 
