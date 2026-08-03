@@ -50,6 +50,8 @@ DEFAULT_LIMIT = 60
 # reloading a model per question would dominate the response time.
 _encoder = None
 _reranker = None
+_chunks_built = None
+_stopwords = None
 
 
 def device():
@@ -80,50 +82,76 @@ def reranker():
 
 COLUMNS = """source_id, title, employer, city, country, closes_at, url, description"""
 
+# The same list qualified with the table alias, for queries that join positions to
+# position_chunks -- both carry source_id, so an unqualified name is ambiguous.
+P_COLUMNS = ", ".join(f"p.{name.strip()}" for name in COLUMNS.split(","))
 
-def as_result(row, vector_score=None, text_score=None):
+
+def as_result(row, vector_score=None, chunk_score=None, text_score=None):
     return {
         "source_id": row[0], "title": row[1], "employer": row[2], "city": row[3],
         "country": row[4], "closes_at": row[5], "url": row[6], "description": row[7],
-        "vector_score": vector_score, "text_score": text_score,
-        "rerank_score": None, "fused_score": 0.0,
+        "vector_score": vector_score, "chunk_score": chunk_score,
+        "text_score": text_score, "rerank_score": None, "fused_score": 0.0,
     }
 
 
-def tsqueries(question):
+def stopwords(conn):
+    """Words too common in the corpus to be worth searching for.
+
+    Measured, not listed by hand: `extract.py --stopwords` counts how many adverts
+    contain each word and records those above a threshold. A hand-written list would
+    be English only, while the adverts here are also Swedish, German, Dutch, French
+    and Finnish -- and it would be a guess about which words are common rather than
+    a count of which ones are.
+    """
+    global _stopwords
+    if _stopwords is None:
+        _stopwords = {
+            row[0] for row in conn.execute("SELECT word FROM stopwords").fetchall()
+        }
+        if not _stopwords:
+            print("no stopwords recorded -- run: python extract.py --stopwords",
+                  file=sys.stderr)
+    return _stopwords
+
+
+def tsqueries(question, common):
     """Full-text queries for the question, strictest first.
 
-    Two tiers, strict then slightly looser, and the results are taken in that order:
+    Stopwords are removed first, then three tiers, strictest first:
 
-        phrase   erc <-> starting <-> grant   the words adjacent, in order
-        all      erc & starting & grant       all present, anywhere in the advert
+        phrase   pytorch <-> tensorflow   the words adjacent, in order
+        all      pytorch & tensorflow     all present, anywhere in the advert
+        any      pytorch | tensorflow     at least one present
 
-    The phrase tier is what separates a real hit from a coincidence: a posting about
-    Aristotle contains "ERC", "starting date" and "grant" in three separate
-    paragraphs and so satisfies "all", but only the genuine ERC Starting Grant
-    positions have the words together.
+    Removing the stopwords is what makes the last tier usable. Left in, "positions
+    using PyTorch or TensorFlow" becomes `positions & using & pytorch & or &
+    tensorflow`, which no advert satisfies, so full-text returned nothing at all for
+    56 positions that name PyTorch. ORing the same words was worse: every advert
+    contains "for" and "position", so most of the database came back with every
+    score at the same noise floor and gender studies was promoted into a machine
+    learning search.
 
-    There is deliberately no "any" tier ORing the words. It sounds like useful
-    breadth and is not: asked "I am looking for an AI or ML PhD position, show me
-    all of them", it becomes `i | am | looking | for | ... | position | ...`, and
-    every advert ever written contains "for" and "position". Full-text then returns
-    most of the database with every score at the same 0.054 noise floor, and rank
-    fusion promotes gender studies and post-colonial literature into a search for
-    machine learning.
+    Neither failure was the tier's fault. It was the words.
 
-    So full-text abstains when it has nothing exact to say. That is the division of
-    labour: it matches literal strings, the vector search handles meaning, and a
-    question phrased as a sentence is a job for the latter.
+    The phrase tier separates a real hit from a coincidence: a posting about
+    Aristotle contains "ERC", "starting date" and "grant" in three different
+    paragraphs and satisfies "all", but only genuine ERC Starting Grant positions
+    have the words together.
 
     Only word characters survive the split, so nothing reaching to_tsquery can upset
     its parser.
     """
-    words = re.findall(r"[^\W_]+", question.lower(), flags=re.UNICODE)
+    words = [
+        word for word in re.findall(r"[^\W_]+", question.lower(), flags=re.UNICODE)
+        if word not in common
+    ]
     if not words:
         return []
     if len(words) == 1:
         return [words[0]]
-    return [" <-> ".join(words), " & ".join(words)]
+    return [" <-> ".join(words), " & ".join(words), " | ".join(words)]
 
 
 def fuse(rankings, k=60):
@@ -144,8 +172,18 @@ def fuse(rankings, k=60):
     return fused
 
 
+def has_chunks(conn):
+    """Whether the chunk table has been built. Cached: it cannot change mid-process."""
+    global _chunks_built
+    if _chunks_built is None:
+        _chunks_built = bool(conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM position_chunks LIMIT 1)"
+        ).fetchone()[0])
+    return _chunks_built
+
+
 def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
-             hybrid=True, position_type=None):
+             hybrid=True, position_type=None, chunked=True):
     """Find the positions that best answer `question`.
 
     Returns `limit` dicts, best first. Two searches run: vector similarity, which
@@ -174,10 +212,25 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
     params = {"vector": vector, "wanted": wanted, "type": position_type}
 
     found = {}
-    vector_order, text_order = [], []
+    vector_order, chunk_order, text_order = [], [], []
 
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
+
+        # Three rankings are gathered and fused. They fail in different places, and
+        # a position found by two of them outranks one found by only one:
+        #
+        #   position vectors  what the advert is about, from its opening
+        #   chunk vectors     whether any passage matches, wherever it sits
+        #   full-text         whether an exact string appears anywhere
+        #
+        # Neither vector ranking is sufficient alone. The position-level one sees
+        # only the first ~1,500 characters, which for many employers is mostly
+        # shared boilerplate -- it missed a position titled "PhD Student (f/m/d)"
+        # whose subject was described further down. The chunk-level one compresses
+        # the scores, because almost every advert has some passage loosely matching
+        # a broad question, and positions the first query found comfortably fell
+        # below the cutoff.
 
         # <=> is pgvector's cosine distance: 0 is identical, 2 is opposite.
         # Subtracting from 1 turns it into a similarity, which reads more naturally.
@@ -194,11 +247,37 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
             found[row[0]] = as_result(row, vector_score=float(row[8]))
             vector_order.append(row[0])
 
+        if chunked and has_chunks(conn):
+            # Every chunk is scored and each position keeps its best. No shortlist
+            # of chunks first: taking the top N and collapsing them looks like the
+            # same thing and is not, because one 24-chunk advert can occupy 24 of
+            # those slots. At 12,442 chunks a full scan is about a tenth of a
+            # second, so the shortcut buys nothing and costs results.
+            for row in conn.execute(
+                f"""
+                SELECT {P_COLUMNS},
+                       max(1 - (c.embedding <=> %(vector)s)) AS score
+                  FROM position_chunks c
+                  JOIN positions p
+                    ON p.source = c.source AND p.source_id = c.source_id
+                 WHERE c.embedding IS NOT NULL {open_clause} {type_clause}
+                 GROUP BY {P_COLUMNS}
+                 ORDER BY score DESC
+                 LIMIT %(wanted)s
+                """,
+                params,
+            ).fetchall():
+                if row[0] in found:
+                    found[row[0]]["chunk_score"] = float(row[8])
+                else:
+                    found[row[0]] = as_result(row, chunk_score=float(row[8]))
+                chunk_order.append(row[0])
+
         if hybrid:
             # Strict query first, then loose to top up. Anything already found by
             # the stricter query keeps its higher place: text_order is built in
             # order, and a position is only added the first time it appears.
-            for query in tsqueries(question):
+            for query in tsqueries(question, stopwords(conn)):
                 if len(text_order) >= wanted:
                     break
                 for row in conn.execute(
@@ -221,7 +300,7 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
                         found[row[0]] = as_result(row, text_score=float(row[8]))
                     text_order.append(row[0])
 
-    fused = fuse([vector_order, text_order])
+    fused = fuse([vector_order, chunk_order, text_order])
     for key, score in fused.items():
         found[key]["fused_score"] = score
 
@@ -260,6 +339,7 @@ def describe(item):
     marks = " / ".join(filter(None, [
         mark("rerank", item["rerank_score"]) if item["rerank_score"] is not None else None,
         mark("vector", item["vector_score"]),
+        mark("chunk", item["chunk_score"]),
         mark("text", item["text_score"]),
     ]))
 
@@ -283,6 +363,9 @@ def main():
                         help="re-read the best candidates with the cross-encoder")
     parser.add_argument("--no-hybrid", action="store_true",
                         help="vector search only, without full-text. For comparison")
+    parser.add_argument("--no-chunks", action="store_true",
+                        help="score each position by its opening only, as before "
+                             "chunking. For comparison")
     parser.add_argument("--type", dest="position_type",
                         choices=["phd", "postdoc", "professor", "lecturer",
                                  "researcher", "engineer", "student", "support"],
@@ -292,7 +375,7 @@ def main():
     results = retrieve(
         args.question, limit=args.limit, open_only=args.open_only,
         rerank=args.rerank, hybrid=not args.no_hybrid,
-        position_type=args.position_type,
+        position_type=args.position_type, chunked=not args.no_chunks,
     )
     if not results:
         sys.exit("nothing found")
