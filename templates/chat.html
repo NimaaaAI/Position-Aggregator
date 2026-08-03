@@ -169,7 +169,7 @@ function showPositions(positions, given) {
       <div class="meta">${esc(p.employer || '')}${p.city ? ' · ' + esc(p.city) : ''}${
         p.country ? ', ' + esc(p.country) : ''}${p.closes ? ' · closes ' + esc(p.closes) : ''}</div>
       <div class="sc">${score('rerank', p.rerank_score)}${score('vector', p.vector_score)}${
-        score('text', p.text_score)}</div>
+        score('chunk', p.chunk_score)}${score('text', p.text_score)}</div>
     </div>`).join('');
 }
 
