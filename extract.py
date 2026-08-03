@@ -292,6 +292,43 @@ def classify_all(force=False):
             print(f"    {(title or '')[:74]}")
 
 
+def build_stopwords(share=0.25):
+    """Count how many adverts contain each word, and record the common ones.
+
+    A word present in a quarter of the corpus cannot help tell one advert from
+    another, whatever language it is in. Removing such words is what lets a
+    full-text query OR its terms without matching everything.
+    """
+    with psycopg.connect(DSN) as conn:
+        total = conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+        if not total:
+            print("no positions yet -- run: python extract.py --all")
+            return
+
+        conn.execute("TRUNCATE stopwords")
+        conn.execute(
+            """
+            INSERT INTO stopwords (word, ndoc, share)
+            SELECT word, ndoc, ndoc::real / %s
+              FROM ts_stat('SELECT tsv FROM positions')
+             WHERE ndoc::real / %s >= %s
+            """,
+            (total, total, share),
+        )
+        conn.commit()
+
+        rows = conn.execute(
+            "SELECT word, share FROM stopwords ORDER BY share DESC"
+        ).fetchall()
+
+    print(f"\n{len(rows)} word(s) appear in at least {share:.0%} of "
+          f"{total} adverts\n")
+    for word, word_share in rows[:40]:
+        print(f"  {word_share:5.0%}  {word}")
+    if len(rows) > 40:
+        print(f"  ... and {len(rows) - 40} more")
+
+
 def check_types():
     """What the classifier decided, with samples, so it can be judged."""
     with psycopg.connect(DSN) as conn:
@@ -442,12 +479,22 @@ parser.add_argument("--types", action="store_true",
                     help="work out what kind of post each one is (phd, postdoc, ...)")
 parser.add_argument("--check-types", action="store_true",
                     help="report what the type classifier decided")
+parser.add_argument("--stopwords", action="store_true",
+                    help="count word frequencies and record the words too common "
+                         "to be worth searching for")
+parser.add_argument("--stopword-share", type=float, default=0.25,
+                    help="a word in at least this fraction of adverts is a stopword")
 parser.add_argument("--force", action="store_true",
                     help="with --all or --types, redo work already done")
 args = parser.parse_args()
 
-if not (args.one or args.all or args.check or args.types or args.check_types):
-    sys.exit("pick one: --one, --all, --types, --check or --check-types")
+if not (args.one or args.all or args.check or args.types or args.check_types
+        or args.stopwords):
+    sys.exit("pick one: --one, --all, --types, --stopwords, --check or --check-types")
+
+if args.stopwords:
+    build_stopwords(share=args.stopword_share)
+    sys.exit(0)
 
 if args.check:
     check()
