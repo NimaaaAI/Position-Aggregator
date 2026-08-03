@@ -108,4 +108,55 @@ ALTER TABLE positions
 
 CREATE INDEX IF NOT EXISTS positions_tsv_idx ON positions USING gin (tsv);
 
+-- Words too common in this corpus to distinguish anything, measured rather than
+-- listed by hand.
+--
+-- A full-text query ORing its words is only useful if those words are informative.
+-- "positions using PyTorch or TensorFlow" must become `pytorch | tensorflow`: leave
+-- "positions" and "using" in and every advert matches, because every advert contains
+-- them. Postgres's ts_rank has no notion of document frequency and cannot work this
+-- out for itself.
+--
+-- Counted from the corpus with ts_stat, so it needs no hand-written list, covers
+-- Swedish and German and Dutch as readily as English, and changes as the data does.
+CREATE TABLE IF NOT EXISTS stopwords (
+    word  text PRIMARY KEY,
+    ndoc  integer NOT NULL,   -- adverts containing it
+    share real    NOT NULL    -- as a fraction of all adverts
+);
+
+ALTER TABLE stopwords OWNER TO positions;
+
+
+-- Each advert split into pieces, one vector per piece.
+--
+-- positions.embedding covers only the first ~1,500 characters, because that is all
+-- multilingual-e5-base reads. The average advert here is 5,976 characters and 89% of
+-- them are over 3,000, so roughly the first quarter of a typical advert is
+-- searchable by meaning and the rest is not.
+--
+-- Worse, much of that quarter is the same for every posting from an employer -- "The
+-- University of Antwerp is a dynamic, forward-thinking European university…" -- so
+-- the budget is partly spent on text that cannot distinguish anything.
+--
+-- Chunking fixes both. A position is then scored by its best-matching piece rather
+-- than by its opening, and the boilerplate simply becomes a chunk that never matches
+-- anything, with no need to detect it.
+CREATE TABLE IF NOT EXISTS position_chunks (
+    source      text NOT NULL,
+    source_id   text NOT NULL,
+    chunk_index integer NOT NULL,
+    text        text NOT NULL,     -- exactly what was embedded, for debugging
+    embedding   vector(768),
+    embedded_at timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (source, source_id, chunk_index),
+    FOREIGN KEY (source, source_id)
+        REFERENCES positions (source, source_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS position_chunks_embedding_idx
+    ON position_chunks USING hnsw (embedding vector_cosine_ops);
+
 ALTER TABLE positions OWNER TO positions;
+ALTER TABLE position_chunks OWNER TO positions;
