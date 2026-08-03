@@ -63,6 +63,8 @@ def as_json(item):
         # other has no score from the one that missed it, which is worth showing.
         "vector_score": (round(item["vector_score"], 4)
                          if item["vector_score"] is not None else None),
+        "chunk_score": (round(item["chunk_score"], 4)
+                        if item["chunk_score"] is not None else None),
         "text_score": (round(item["text_score"], 4)
                        if item["text_score"] is not None else None),
         "rerank_score": (round(item["rerank_score"], 4)
