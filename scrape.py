@@ -34,9 +34,18 @@ def get(url):
     return response
 
 
-def ad_id(url):
-    """The number at the end of an ad URL, used as its filename."""
-    return url.rstrip("/").split("/")[-1]
+def ad_id(url, pattern):
+    """The site's own number for the ad, used as its filename.
+
+    Where that number sits differs by site -- last path segment on one, third on
+    another -- so the pattern comes from sites.yml rather than being guessed here.
+    A pattern that does not match is a config mistake worth stopping for: falling
+    back to the slug would quietly file every ad under the wrong name.
+    """
+    found = re.search(pattern, url)
+    if not found:
+        sys.exit(f"id_pattern {pattern!r} does not match {url}")
+    return found.group(1)
 
 
 parser = argparse.ArgumentParser()
@@ -117,7 +126,7 @@ for site in sites:
     dead = set(dead_file.read_text(encoding="utf-8").split()) if dead_file.exists() else set()
 
     todo = [u for u in urls
-            if u not in dead and not (html_dir / f"{ad_id(u)}.html").exists()]
+            if u not in dead and not (html_dir / f"{ad_id(u, site['id_pattern'])}.html").exists()]
 
     if args.one:
         todo = todo[:1]
@@ -125,7 +134,7 @@ for site in sites:
           f"{len(todo)} to go, {len(dead & set(urls))} known dead")
 
     for number, url in enumerate(todo, 1):
-        path = html_dir / f"{ad_id(url)}.html"
+        path = html_dir / f"{ad_id(url, site['id_pattern'])}.html"
         try:
             response = get(url)
         except requests.RequestException as error:
