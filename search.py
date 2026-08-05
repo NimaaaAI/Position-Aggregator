@@ -80,7 +80,7 @@ def reranker():
     return _reranker
 
 
-COLUMNS = """source_id, title, employer, city, country, closes_at, url, description"""
+COLUMNS = """source, source_id, title, employer, city, country, closes_at, url, description"""
 
 # The same list qualified with the table alias, for queries that join positions to
 # position_chunks -- both carry source_id, so an unqualified name is ambiguous.
