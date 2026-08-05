@@ -1,17 +1,25 @@
 # Sites to download. Add a block, run the script.
+#
+# scrape.py names no site: everything specific to one lives here. Each block says
+# where the sitemap is, which of its children hold the ads, what an ad URL looks
+# like, and where the ad's own id sits inside that URL.
 
 sites:
+  # https://academicpositions.com/ad/<employer>/<year>/<job-title>/<id>
   - name: academicpositions
-
-    # The site's sitemap index: a list of other sitemaps.
     sitemap_index: https://academicpositions.com/sitemap.xml
-
-    # Which of those sitemaps holds the job ads. Matched as plain text in the URL.
-    sitemap_match: jobs
-
-    # What a job ad URL looks like, so category and employer pages are skipped:
-    # https://academicpositions.com/ad/<employer>/<year>/<job-title>/<id>
-    job_url_contains: /ad/
-
-    # Seconds between requests.
+    sitemap_match: jobs         # matched as plain text against the child sitemap URLs
+    job_url_contains: /ad/      # so category and employer pages are skipped
+    id_pattern: '/(\d+)/?$'     # the number at the end
     delay: 2
+
+  # https://www.academictransfer.com/en/jobs/<id>/<job-title>/
+  #
+  # delay 10 because their robots.txt asks for it (Crawl-delay: 10). Slower than
+  # the site above and deliberately so -- ~1,000 ads, so about three hours.
+  - name: academictransfer
+    sitemap_index: https://www.academictransfer.com/sitemap.xml
+    sitemap_match: vacancies    # sitemap-vacancies.xml, next to organisations and cms
+    job_url_contains: /jobs/
+    id_pattern: '/jobs/(\d+)/'  # the number after /jobs/, not the slug after it
+    delay: 10
