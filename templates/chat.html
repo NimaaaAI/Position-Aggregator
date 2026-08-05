@@ -3,136 +3,266 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Position search</title>
+<title>Positions</title>
 <style>
 :root{
-  --bg:#f5f7f6; --panel:#fff; --ink:#141a19; --muted:#5f6c69; --faint:#8c9793;
-  --line:#dde4e1; --accent:#1a5c4c; --accent-soft:#e4efea; --warn:#8a5520;
-  --danger:#93302a; --code:#eef2f0;
+  --bg:#f7f7f5; --panel:#fff; --panel-2:#fbfbfa; --ink:#17201d; --muted:#5d6b66;
+  --faint:#94a09b; --line:#e5e9e6; --line-2:#eef1ef;
+  --accent:#0d6d5b; --accent-ink:#fff; --accent-soft:#e8f3ef; --accent-line:#bfded3;
+  --warn:#9a6318; --warn-soft:#fdf5e9; --danger:#a3372f; --danger-soft:#fdeceb;
+  --shadow:0 1px 2px rgba(20,30,26,.05), 0 8px 24px -12px rgba(20,30,26,.14);
+  --shadow-lg:0 2px 4px rgba(20,30,26,.05), 0 18px 40px -16px rgba(20,30,26,.2);
+  --r:14px; --r-sm:9px;
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg:#111716; --panel:#19201f; --ink:#e5eae8; --muted:#98a5a1; --faint:#6e7c78;
-    --line:#293331; --accent:#79c2ab; --accent-soft:#1b2b27; --warn:#d69a5f;
-    --danger:#dd8b84; --code:#1f2726;
+    --bg:#0c1110; --panel:#141b19; --panel-2:#111817; --ink:#e8edeb;
+    --muted:#95a49f; --faint:#66756f; --line:#222c29; --line-2:#1b2422;
+    --accent:#3ecfa8; --accent-ink:#04120e; --accent-soft:#132723; --accent-line:#1f4239;
+    --warn:#e0a75f; --warn-soft:#231c10; --danger:#e88b83; --danger-soft:#2a1614;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    --shadow-lg:0 2px 4px rgba(0,0,0,.4), 0 18px 40px -16px rgba(0,0,0,.7);
   }
 }
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-header{background:var(--panel);border-bottom:1px solid var(--line);padding:.75rem 1.2rem}
-.wrap{max-width:86rem;margin:0 auto;display:flex;flex-direction:column;gap:.55rem}
-.bar{display:flex;gap:.7rem;align-items:center}
-.bar.opts{flex-wrap:wrap;gap:.9rem}
-h1{font-size:1rem;margin:0;white-space:nowrap;font-weight:650}
-h1 span{color:var(--faint);font-weight:400;font-size:.85rem}
-#q{flex:1;min-width:8rem}
-@media (max-width:52rem){
-  .bar{flex-wrap:wrap}
-  h1{width:100%}
-}
-input,select,button{font:inherit;background:var(--panel);color:var(--ink);
-  border:1px solid var(--line);border-radius:7px;padding:.42rem .6rem}
-input[type=number]{width:4.4rem}
-button{cursor:pointer}
-button:hover{border-color:var(--accent)}
-button.go{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:600}
-button.go:disabled{opacity:.5;cursor:wait}
-label{font-size:.78rem;color:var(--muted);display:flex;gap:.35rem;align-items:center}
-main{max-width:86rem;margin:0 auto;padding:1.2rem;display:grid;
-  grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:1.2rem;align-items:start}
-@media (max-width:60rem){main{grid-template-columns:1fr}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem 1.1rem}
-.card h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;
-  color:var(--faint);margin:0 0 .8rem;font-weight:600}
-#answer{white-space:pre-wrap;word-wrap:break-word}
-#answer .head{display:inline-block;margin-top:.9rem;color:var(--accent);
-  font-size:.74rem;text-transform:uppercase;letter-spacing:.07em}
-#answer .cite{color:var(--accent);text-decoration:none;font-weight:600;
-  border-bottom:1px dotted var(--accent)}
-#answer .cite:hover{background:var(--accent-soft)}
-.stats{display:flex;gap:1.1rem;flex-wrap:wrap;font-size:.76rem;color:var(--muted);
-  border-top:1px solid var(--line);margin-top:.9rem;padding-top:.7rem;
+  font:15px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}
+a{color:inherit}
+::selection{background:var(--accent-soft);color:var(--ink)}
+
+/* ---------- top bar ---------- */
+.top{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
+.top-in{max-width:88rem;margin:0 auto;padding:.85rem 1.4rem;display:flex;
+  align-items:center;gap:1rem;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:.6rem;font-weight:680;letter-spacing:-.01em;
+  font-size:1.02rem;white-space:nowrap}
+.mark{width:1.65rem;height:1.65rem;border-radius:8px;background:var(--accent);
+  color:var(--accent-ink);display:grid;place-items:center;font-size:.85rem;font-weight:800;
+  box-shadow:var(--shadow)}
+.dbstat{display:flex;gap:.5rem;margin-left:auto;flex-wrap:wrap}
+.stat{display:flex;align-items:baseline;gap:.32rem;font-size:.76rem;color:var(--muted);
+  background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:.24rem .7rem}
+.stat b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+
+/* ---------- search ---------- */
+.hero{max-width:88rem;margin:0 auto;padding:1.4rem 1.4rem .2rem}
+.searchbox{display:flex;gap:.55rem;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--r);padding:.5rem;box-shadow:var(--shadow);
+  transition:border-color .18s,box-shadow .18s}
+.searchbox:focus-within{border-color:var(--accent-line);box-shadow:var(--shadow-lg)}
+.searchbox .ico{display:grid;place-items:center;padding-left:.55rem;color:var(--faint);flex:none}
+#q{flex:1;min-width:6rem;border:0;background:transparent;color:var(--ink);
+  font:inherit;font-size:1rem;padding:.55rem .2rem;outline:none}
+#q::placeholder{color:var(--faint)}
+.btn{font:inherit;font-size:.88rem;cursor:pointer;border-radius:var(--r-sm);
+  border:1px solid var(--line);background:var(--panel-2);color:var(--ink);
+  padding:.55rem .95rem;font-weight:560;white-space:nowrap;
+  transition:background .15s,border-color .15s,transform .08s}
+.btn:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:640}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+
+/* ---------- filters ---------- */
+.filters{max-width:88rem;margin:0 auto;padding:.75rem 1.4rem 0;display:flex;
+  gap:.5rem;flex-wrap:wrap;align-items:center}
+.field{display:flex;align-items:center;gap:.4rem;background:var(--panel);
+  border:1px solid var(--line);border-radius:99px;padding:.3rem .75rem;font-size:.8rem;
+  color:var(--muted);transition:border-color .15s}
+.field:hover{border-color:var(--accent-line)}
+.field select,.field input{font:inherit;font-size:.8rem;border:0;background:transparent;
+  color:var(--ink);outline:none;padding:0;font-weight:550}
+.field input[type=number]{width:2.8rem;text-align:right;font-variant-numeric:tabular-nums}
+.field input[type=checkbox]{accent-color:var(--accent);width:.9rem;height:.9rem;cursor:pointer}
+.field.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.field.on select,.field.on input{color:var(--accent)}
+.field label{cursor:pointer;user-select:none}
+.chips{max-width:88rem;margin:0 auto;padding:.9rem 1.4rem 0;display:flex;gap:.45rem;flex-wrap:wrap}
+.chip{font-size:.78rem;color:var(--muted);background:var(--panel);cursor:pointer;
+  border:1px dashed var(--line);border-radius:99px;padding:.3rem .8rem;transition:.15s}
+.chip:hover{border-style:solid;border-color:var(--accent-line);color:var(--accent);
+  background:var(--accent-soft)}
+
+/* ---------- layout ---------- */
+main{max-width:88rem;margin:0 auto;padding:1.3rem 1.4rem 4rem;display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:1.3rem;align-items:start}
+@media (max-width:66rem){main{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden}
+.card-head{display:flex;align-items:center;gap:.6rem;padding:.85rem 1.15rem;
+  border-bottom:1px solid var(--line-2);background:var(--panel-2)}
+.card-head h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--faint);margin:0;font-weight:680}
+.card-head .right{margin-left:auto;font-size:.74rem;color:var(--muted);
   font-variant-numeric:tabular-nums}
-.stats b{color:var(--ink);font-weight:600}
-.warn{border-left:3px solid var(--warn);background:var(--code);padding:.5rem .7rem;
-  border-radius:0 6px 6px 0;font-size:.83rem;margin-top:.8rem;color:var(--muted)}
-.pos{border-top:1px solid var(--line);padding:.65rem 0;font-size:.85rem}
-.pos:first-of-type{border-top:0}
-.pos.given{background:var(--accent-soft);margin:0 -1.1rem;padding:.65rem 1.1rem;
-  border-top-color:transparent}
-.pos .n{color:var(--faint);font-variant-numeric:tabular-nums;font-size:.76rem}
-.pos a{color:inherit;text-decoration:none;font-weight:600}
-.pos a:hover{color:var(--accent);text-decoration:underline}
-.pos .meta{color:var(--muted);font-size:.78rem;margin-top:.15rem}
-.pos .sc{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.72rem;
-  color:var(--faint);margin-top:.2rem;display:flex;gap:.75rem;flex-wrap:wrap}
-.pos .sc .miss{opacity:.45}
-.hint{display:inline-flex;align-items:center;justify-content:center;width:1rem;
-  height:1rem;border:1px solid var(--line);border-radius:50%;font-size:.65rem;
-  cursor:help;color:var(--faint)}
-.tag{font-size:.68rem;border:1px solid var(--danger);color:var(--danger);
-  border-radius:99px;padding:0 .4rem;margin-left:.3rem}
-.empty{color:var(--faint);font-size:.86rem}
-.spin{display:inline-block;width:.75rem;height:.75rem;border:2px solid var(--line);
+.card-body{padding:1.15rem}
+.sticky{position:sticky;top:5.2rem}
+@media (max-width:66rem){.sticky{position:static}}
+
+/* ---------- answer ---------- */
+#answer{white-space:pre-wrap;word-wrap:break-word;font-size:.94rem}
+#answer .head{display:block;margin:1.15rem 0 .35rem;color:var(--ink);font-size:.76rem;
+  text-transform:uppercase;letter-spacing:.08em;font-weight:700;
+  padding-bottom:.3rem;border-bottom:1px solid var(--line-2)}
+#answer .head:first-child{margin-top:0}
+#answer .cite{display:inline-block;text-decoration:none;font-weight:650;font-size:.8rem;
+  color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);
+  border-radius:6px;padding:0 .35rem;line-height:1.4;transition:.15s}
+#answer .cite:hover{background:var(--accent);color:var(--accent-ink)}
+.placeholder{color:var(--faint);font-size:.9rem}
+.stats{display:flex;gap:.5rem;flex-wrap:wrap;font-size:.73rem;color:var(--muted);
+  border-top:1px solid var(--line-2);margin-top:1.1rem;padding-top:.85rem;
+  font-variant-numeric:tabular-nums}
+.stats span{background:var(--panel-2);border:1px solid var(--line-2);
+  border-radius:99px;padding:.2rem .6rem}
+.stats b{color:var(--ink);font-weight:640}
+.warn{border:1px solid var(--warn);background:var(--warn-soft);color:var(--warn);
+  padding:.6rem .8rem;border-radius:var(--r-sm);font-size:.82rem;margin-top:.9rem}
+.err{border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger);
+  padding:.6rem .8rem;border-radius:var(--r-sm);font-size:.86rem}
+
+/* ---------- results ---------- */
+.list{max-height:none}
+.pos{display:grid;grid-template-columns:1.7rem 1fr;gap:.7rem;padding:.95rem 1.15rem;
+  border-bottom:1px solid var(--line-2);transition:background .15s}
+.pos:last-child{border-bottom:0}
+.pos:hover{background:var(--panel-2)}
+.pos.given{background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}
+.pos.given:hover{background:linear-gradient(90deg,var(--accent-soft),var(--panel-2) 70%)}
+.rank{font-size:.75rem;font-weight:650;color:var(--faint);text-align:right;
+  font-variant-numeric:tabular-nums;padding-top:.12rem}
+.pos.given .rank{color:var(--accent)}
+.ptitle{font-weight:620;font-size:.92rem;line-height:1.4;text-decoration:none;
+  letter-spacing:-.005em}
+.ptitle:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .55rem;
+  font-size:.79rem;color:var(--muted);margin-top:.3rem}
+.meta .dot{color:var(--faint)}
+.snippet{font-size:.8rem;color:var(--muted);margin-top:.45rem;line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.badges{display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem;align-items:center}
+.badge{font-size:.68rem;font-weight:600;border-radius:99px;padding:.1rem .5rem;
+  border:1px solid var(--line);color:var(--muted);background:var(--panel-2);
+  letter-spacing:.01em;white-space:nowrap}
+.badge.src{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
+.badge.closed{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
+.badge.soon{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
+.scores{display:flex;align-items:center;gap:.55rem;margin-top:.5rem;flex-wrap:wrap;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.69rem;color:var(--faint)}
+.bar{width:3.4rem;height:4px;border-radius:99px;background:var(--line);overflow:hidden;flex:none}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.sc{white-space:nowrap}
+.sc b{color:var(--muted);font-weight:600}
+.sc.miss{opacity:.4}
+
+/* ---------- states ---------- */
+.empty{padding:2.6rem 1.15rem;text-align:center;color:var(--faint)}
+.empty .big{font-size:1.6rem;opacity:.35;display:block;margin-bottom:.5rem}
+.skel{padding:.95rem 1.15rem;border-bottom:1px solid var(--line-2)}
+.skel div{height:.62rem;border-radius:99px;
+  background:linear-gradient(90deg,var(--line-2) 25%,var(--line) 37%,var(--line-2) 63%);
+  background-size:400% 100%;animation:sh 1.3s ease-in-out infinite}
+.skel div+div{margin-top:.5rem}
+@keyframes sh{0%{background-position:100% 50%}100%{background-position:0 50%}}
+.spin{display:inline-block;width:.8rem;height:.8rem;border:2px solid var(--line);
   border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;
-  vertical-align:-.1rem;margin-right:.35rem}
+  vertical-align:-.08rem;margin-right:.45rem}
 @keyframes s{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="wrap">
-    <div class="bar">
-      <h1>Position search <span id="dbstat"></span></h1>
-      <input id="q" placeholder="What are you looking for? Any language.">
-      <button id="find">Search only</button>
-      <button id="ask" class="go">Ask</button>
-    </div>
-    <div class="bar opts">
-      <select id="model"></select>
-      <select id="ptype" title="Applied before ranking, not after: PhD positions then compete only with other PhD positions.">
-        <option value="">any kind of post</option>
-        <option value="phd">PhD only</option>
-        <option value="postdoc">Postdoc only</option>
-        <option value="professor">Professor only</option>
-        <option value="lecturer">Lecturer only</option>
-        <option value="researcher">Researcher only</option>
-        <option value="engineer">Engineer only</option>
-      </select>
-      <label>retrieve <input id="show" type="number" value="60" min="1" max="500">
-        <span class="hint" title="How many the search returns and the reranker re-reads. All of them are listed on the right. Reranking costs about 25ms each, so 60 takes ~1.5s and 500 takes ~12s.">?</span>
-      </label>
-      <label>to model <input id="ctx" type="number" value="10" min="0" max="60"></label>
-      <label><input id="openonly" type="checkbox"> open positions only</label>
-      <label><input id="hybrid" type="checkbox" checked> hybrid
-        <span class="hint" title="Vector search plus Postgres full-text, combined by rank fusion. Untick for vector only — try it on an acronym like MSCA or ERC Starting Grant.">?</span>
-      </label>
-    </div>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="mark">P</span> Positions</div>
+    <div class="dbstat" id="dbstat"></div>
   </div>
 </header>
 
+<div class="hero">
+  <div class="searchbox">
+    <span class="ico">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    </span>
+    <input id="q" placeholder="Describe the position you want — in any language" autocomplete="off">
+    <button id="find" class="btn">Search</button>
+    <button id="ask" class="btn primary">Ask</button>
+  </div>
+</div>
+
+<div class="filters">
+  <div class="field" id="f-type">
+    <select id="ptype" title="Applied before ranking, not after: PhD positions then compete only with other PhD positions.">
+      <option value="">Any post</option>
+      <option value="phd">PhD only</option>
+      <option value="postdoc">Postdoc only</option>
+      <option value="professor">Professor only</option>
+      <option value="lecturer">Lecturer only</option>
+      <option value="researcher">Researcher only</option>
+      <option value="engineer">Engineer only</option>
+    </select>
+  </div>
+  <div class="field" id="f-open">
+    <input type="checkbox" id="openonly"><label for="openonly">Open only</label>
+  </div>
+  <div class="field" id="f-hybrid">
+    <input type="checkbox" id="hybrid" checked>
+    <label for="hybrid" title="Vector search plus Postgres full-text, fused by rank. Untick for vector only — try it on an acronym like MSCA or ERC Starting Grant.">Hybrid</label>
+  </div>
+  <div class="field">retrieve <input id="show" type="number" value="60" min="1" max="500"></div>
+  <div class="field">to model <input id="ctx" type="number" value="10" min="0" max="60"></div>
+  <div class="field"><select id="model"></select></div>
+</div>
+
+<div class="chips" id="chips"></div>
+
 <main>
   <section class="card">
-    <h2>Answer</h2>
-    <div id="answer" class="empty">Ask a question, or use <b>Search only</b> to see
-      retrieval work with no model and no cost.</div>
-    <div id="miss"></div>
-    <div class="stats" id="stats"></div>
+    <div class="card-head"><h2>Answer</h2><span class="right" id="answer-right"></span></div>
+    <div class="card-body">
+      <div id="answer" class="placeholder">Ask a question in plain language, or press
+        <b>Search</b> to see retrieval alone — no model, no cost.</div>
+      <div id="miss"></div>
+      <div class="stats" id="stats"></div>
+    </div>
   </section>
 
-  <section class="card">
-    <h2 id="poshead">Retrieved</h2>
-    <div id="positions" class="empty">Nothing yet.</div>
+  <section class="card sticky">
+    <div class="card-head"><h2>Retrieved</h2><span class="right" id="poshead"></span></div>
+    <div class="list" id="positions">
+      <div class="empty"><span class="big">◎</span>Nothing searched yet.</div>
+    </div>
   </section>
 </main>
 
 <script>
 const $ = s => document.querySelector(s);
-const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => (s ?? '').replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-function body() {
+const EXAMPLES = [
+  'funded PhD in machine learning',
+  'ERC Starting Grant',
+  'doktorand maskininlärning',
+  'PhD positions in computer vision in the Netherlands',
+  'MSCA doctoral network',
+];
+
+$('#chips').innerHTML = EXAMPLES.map(e =>
+  `<button class="chip">${esc(e)}</button>`).join('');
+$('#chips').onclick = e => {
+  if (!e.target.classList.contains('chip')) return;
+  $('#q').value = e.target.textContent;
+  run('/api/chat');
+};
+
+function payload() {
   return {
     question: $('#q').value.trim(),
     model: $('#model').value,
@@ -145,32 +275,68 @@ function body() {
   };
 }
 
+// Light up a filter when it is doing something, so a forgotten setting is visible
+// rather than silently changing every result.
+function paintFilters() {
+  $('#f-type').classList.toggle('on', !!$('#ptype').value);
+  $('#f-open').classList.toggle('on', $('#openonly').checked);
+  $('#f-hybrid').classList.toggle('on', !$('#hybrid').checked);
+}
+for (const id of ['#ptype', '#openonly', '#hybrid']) $(id).onchange = paintFilters;
+paintFilters();
+
 // A missing score means that search did not return this position at all, which is
-// worth seeing: it shows where one search found something the other missed.
+// worth seeing: it shows where one search found something another missed.
 function score(label, value) {
-  if (value === null || value === undefined) {
-    return label === 'rerank' ? '' : ` <span class="miss">${label} —</span>`;
-  }
-  return ` <span>${label} ${value}</span>`;
+  if (value === null || value === undefined)
+    return `<span class="sc miss">${label} —</span>`;
+  return `<span class="sc">${label} <b>${value}</b></span>`;
+}
+
+function deadline(p) {
+  if (p.closed) return '<span class="badge closed">closed</span>';
+  if (!p.closes) return '';
+  const days = Math.ceil((new Date(p.closes) - Date.now()) / 86400000);
+  if (days >= 0 && days <= 14)
+    return `<span class="badge soon">${days === 0 ? 'closes today' : days + 'd left'}</span>`;
+  return '';
 }
 
 function showPositions(positions, given) {
   $('#poshead').textContent = given
-    ? `Retrieved ${positions.length} · ${given} shown to the model`
-    : `Retrieved ${positions.length}`;
+    ? `${positions.length} found · top ${given} sent to the model`
+    : `${positions.length} found`;
 
-  if (!positions.length) { $('#positions').innerHTML = '<div class="empty">Nothing found.</div>'; return; }
+  if (!positions.length) {
+    $('#positions').innerHTML =
+      '<div class="empty"><span class="big">∅</span>No positions matched.</div>';
+    return;
+  }
 
   $('#positions').innerHTML = positions.map((p, i) => `
-    <div class="pos ${i < given ? 'given' : ''}">
-      <span class="n">${i + 1}.</span>
-      <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>
-      ${p.closed ? '<span class="tag">closed</span>' : ''}
-      <div class="meta">${esc(p.employer || '')}${p.city ? ' · ' + esc(p.city) : ''}${
-        p.country ? ', ' + esc(p.country) : ''}${p.closes ? ' · closes ' + esc(p.closes) : ''}</div>
-      <div class="sc">${score('rerank', p.rerank_score)}${score('vector', p.vector_score)}${
-        score('chunk', p.chunk_score)}${score('text', p.text_score)}</div>
-    </div>`).join('');
+    <article class="pos ${i < given ? 'given' : ''}">
+      <div class="rank">${i + 1}</div>
+      <div>
+        <a class="ptitle" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>
+        <div class="meta">
+          <span>${esc(p.employer || '')}</span>
+          ${p.city ? `<span class="dot">·</span><span>${esc(p.city)}${
+            p.country ? ', ' + esc(p.country) : ''}</span>` : ''}
+          ${p.closes ? `<span class="dot">·</span><span>closes ${esc(p.closes)}</span>` : ''}
+        </div>
+        ${p.snippet ? `<div class="snippet">${esc(p.snippet)}</div>` : ''}
+        <div class="badges">
+          ${p.source ? `<span class="badge src">${esc(p.source)}</span>` : ''}
+          ${deadline(p)}
+        </div>
+        <div class="scores">
+          ${p.rerank_score !== null && p.rerank_score !== undefined
+            ? `<span class="bar"><i style="width:${Math.round(p.rerank_score * 100)}%"></i></span>
+               <span class="sc">rerank <b>${p.rerank_score}</b></span>` : ''}
+          ${score('vector', p.vector_score)}${score('chunk', p.chunk_score)}${score('text', p.text_score)}
+        </div>
+      </div>
+    </article>`).join('');
 }
 
 // The model writes markdown and cites positions as [3]. Turn both into HTML, and
@@ -178,63 +344,65 @@ function showPositions(positions, given) {
 // row, never from the model, so it cannot be mistyped.
 function render(text, positions) {
   let html = esc(text);
-
   html = html.replace(/^\s*#{1,6}\s*(.+)$/gm, '<b class="head">$1</b>');
   html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:]|$)/g, '$1<em>$2</em>');
-
   html = html.replace(/\[(\d+)\]/g, (whole, number) => {
-    const position = positions[+number - 1];
-    if (!position) return whole;
-    return `<a class="cite" href="${esc(position.url)}" target="_blank"
-             rel="noopener" title="${esc(position.title)}">[${number}]</a>`;
+    const p = positions[+number - 1];
+    if (!p) return whole;
+    return `<a class="cite" href="${esc(p.url)}" target="_blank" rel="noopener"
+             title="${esc(p.title)}">${number}</a>`;
   });
-
   return html;
 }
 
 async function run(endpoint) {
-  const payload = body();
-  if (!payload.question) { $('#q').focus(); return; }
+  const body = payload();
+  if (!body.question) { $('#q').focus(); return; }
 
   for (const b of ['#ask', '#find']) $(b).disabled = true;
-  $('#answer').innerHTML = '<span class="spin"></span> working…';
+  $('#answer').innerHTML = '<span class="spin"></span><span class="placeholder">working…</span>';
   $('#miss').innerHTML = '';
   $('#stats').innerHTML = '';
+  $('#poshead').textContent = '';
+  $('#positions').innerHTML = Array.from({length: 5}, () =>
+    '<div class="skel"><div style="width:70%"></div><div style="width:45%"></div></div>').join('');
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     const data = await response.json();
 
     if (data.error) {
-      $('#answer').innerHTML = `<span style="color:var(--danger)">${esc(data.error)}</span>`;
+      $('#answer').innerHTML = `<div class="err">${esc(data.error)}</div>`;
+      $('#positions').innerHTML = '<div class="empty"><span class="big">!</span>Nothing returned.</div>';
       return;
     }
 
     $('#answer').innerHTML = data.answer
       ? render(data.answer, data.positions || [])
-      : '<span class="empty">Retrieval only — no model was called.</span>';
+      : '<div class="placeholder">Retrieval only — no model was called.</div>';
 
     if (data.missing && data.missing.length) {
       $('#miss').innerHTML = `<div class="warn">The model left out
         ${data.missing.length} of ${data.given} positions it was given:
-        ${data.missing.map(n => '[' + n + ']').join(', ')}. They are in the list,
-        just without a comment.</div>`;
+        ${data.missing.map(n => '[' + n + ']').join(', ')}. They are in the list on
+        the right, just without a comment.</div>`;
     }
 
     const t = data.timings || {}, u = data.usage;
     $('#stats').innerHTML = [
       `retrieval <b>${t.retrieval_ms}ms</b>`,
       t.answer_ms ? `model <b>${t.answer_ms}ms</b>` : '',
-      u ? `tokens <b>${u.prompt_tokens}</b> in / <b>${u.completion_tokens}</b> out` : '',
+      u ? `<b>${u.prompt_tokens}</b> in / <b>${u.completion_tokens}</b> out` : '',
     ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
 
     showPositions(data.positions, data.given || 0);
   } catch (error) {
-    $('#answer').innerHTML = `<span style="color:var(--danger)">${esc(error.message)}</span>`;
+    $('#answer').innerHTML = `<div class="err">${esc(error.message)}</div>`;
+    $('#positions').innerHTML = '<div class="empty"><span class="big">!</span>Request failed.</div>';
   } finally {
     for (const b of ['#ask', '#find']) $(b).disabled = false;
   }
@@ -251,12 +419,14 @@ fetch('/api/models').then(r => r.json()).then(data => {
   select.innerHTML = data.groups.map(g =>
     `<optgroup label="${esc(g.family)}">` + g.models.map(m =>
       `<option value="${esc(m)}" ${m === data.default ? 'selected' : ''}>${esc(m)}${
-        data.cheap.includes(m) ? '  (cheap)' : ''}</option>`).join('') + '</optgroup>'
+        data.cheap.includes(m) ? ' (cheap)' : ''}</option>`).join('') + '</optgroup>'
   ).join('');
 });
 
 fetch('/api/stats').then(r => r.json()).then(d => {
-  $('#dbstat').textContent = `· ${d.positions} positions, ${d.open} open, ${d.countries} countries`;
+  $('#dbstat').innerHTML = [
+    ['positions', d.positions], ['open', d.open], ['countries', d.countries],
+  ].map(([k, v]) => `<span class="stat"><b>${v.toLocaleString()}</b> ${k}</span>`).join('');
 });
 </script>
 </body>
