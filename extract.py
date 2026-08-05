@@ -22,12 +22,12 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).parent
 DSN = "postgresql://positions:positions@localhost:5432/positions"
 
-# The advert body is taken from the page's own LinkedIn share link, whose "summary"
-# parameter holds the complete advert as HTML and nothing else.
+# One of the two places an advert body is published. See read() for why both are
+# tried rather than one being chosen per site.
 #
 # The obvious approach -- take the page text and subtract the furniture -- does not
-# work here. The body also contains a region picker naming every European country,
-# a language picker, three modals and a "Jobs from this employer" list of other
+# work. The body also contains a region picker naming every European country, a
+# language picker, three modals and a "Jobs from this employer" list of other
 # people's adverts. Subtracting those means guessing every selector, and anything
 # missed is silently glued onto the description: the region picker alone would put
 # "Sverige Norge Danmark Deutschland" into all 1,886 rows, so a search for jobs in
@@ -40,15 +40,24 @@ EMBED_CHARS = 1500
 
 
 def json_ld_job(soup):
-    """The JobPosting block, if the page has one."""
+    """The JobPosting block, if the page has one.
+
+    Sites publish the same block at different depths: academicpositions puts it at
+    the top level, academictransfer wraps it in a WebPage as its "mainEntity". So
+    each candidate is checked one level down as well -- a question of where the
+    block sits, not of which site wrote it.
+    """
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(tag.string or "{}")
         except (json.JSONDecodeError, TypeError):
             continue
         for item in (data if isinstance(data, list) else [data]):
-            if isinstance(item, dict) and item.get("@type") == "JobPosting":
-                return item
+            if not isinstance(item, dict):
+                continue
+            for candidate in (item, item.get("mainEntity")):
+                if isinstance(candidate, dict) and candidate.get("@type") == "JobPosting":
+                    return candidate
     return None
 
 
@@ -76,15 +85,27 @@ def read(path):
     canonical = soup.find("link", rel="canonical")
     url = canonical["href"] if canonical and canonical.get("href") else ""
 
-    # The advert body, from the share link's "summary" parameter. See SHARE_LINK.
-    description = ""
+    # The advert body. Two places carry it, and each site fills in a different one:
+    # academicpositions puts a 165-character blurb in the JSON-LD and the real advert
+    # in its LinkedIn share link, academictransfer puts the whole advert in the JSON-LD
+    # and no summary in its share link at all.
+    #
+    # So both are read and the longer wins. That needs no per-site rule, no name in
+    # this file, and keeps working if either site changes which field it fills -- the
+    # blurb can never beat the advert on length.
+    bodies = [job.get("description") or ""]
     share = soup.find("a", href=SHARE_LINK)
     if share and share.get("href"):
         query = urllib.parse.urlparse(share["href"]).query
-        body_html = urllib.parse.parse_qs(query).get("summary", [""])[0]
-        if body_html:
-            body = BeautifulSoup(body_html, "html.parser")
-            description = re.sub(r"\s+", " ", body.get_text(" ", strip=True)).strip()
+        bodies.append(urllib.parse.parse_qs(query).get("summary", [""])[0])
+
+    bodies = [re.sub(r"\s+", " ", BeautifulSoup(html, "html.parser").get_text(" ", strip=True)).strip()
+              for html in bodies if html]
+    description = max(bodies, key=len) if bodies else ""
+
+    # The short blurb, from the tag every site writes for search engines. Taking it
+    # from the JSON-LD instead would give the whole advert on sites that put it there.
+    blurb = soup.find("meta", attrs={"name": "description"})
 
     title = job.get("title") or ""
     employer = organisation.get("name") or ""
@@ -99,7 +120,9 @@ def read(path):
     embed_text = f"{embed_text}. {description[:EMBED_CHARS]}".strip()
 
     return {
-        "source": "academicpositions",
+        # data/raw/<site>/<id>.html -- the folder scrape.py saved it into, which is
+        # the site's name in sites.yml. Nothing to pass in and nothing to keep in step.
+        "source": path.parent.name,
         "source_id": path.stem,
         "url": url,
         "title": title or None,
@@ -111,7 +134,7 @@ def read(path):
         "industry": job.get("industry") or None,
         "posted_at": when(job.get("datePosted")),
         "closes_at": when(job.get("validThrough")),
-        "summary": job.get("description") or None,
+        "summary": (blurb.get("content") if blurb else None) or None,
         "description": description or None,
         "embed_text": embed_text or None,
         "html_file": str(path.relative_to(ROOT)),
