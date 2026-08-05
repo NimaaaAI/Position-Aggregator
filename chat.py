@@ -51,6 +51,7 @@ def as_json(item):
     survives JSON."""
     closes = item["closes_at"]
     return {
+        "source": item["source"],
         "source_id": item["source_id"],
         "title": item["title"],
         "employer": item["employer"],
