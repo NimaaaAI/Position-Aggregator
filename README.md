@@ -7,8 +7,9 @@
 ![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/postgres-16-4169E1?logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-0.8-000000)
-![Positions](https://img.shields.io/badge/positions-1%2C972-success)
-![Chunks](https://img.shields.io/badge/chunks-12%2C442-success)
+![Sources](https://img.shields.io/badge/sources-2-blueviolet)
+![Positions](https://img.shields.io/badge/positions-2%2C842-success)
+![Chunks](https://img.shields.io/badge/chunks-16%2C565-success)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)
 
 </div>
@@ -18,9 +19,9 @@
 ## 🔄 Flow
 
 ```
-   academicpositions.com
-            │
-   ┌────────▼────────┐
+   academicpositions.com   academictransfer.com
+            └───────────┬───────────┘
+   ┌────────────────────▼────────────┐
    │   scrape.py     │  sitemap → raw HTML on disk
    ├─────────────────┤
    │   extract.py    │  HTML → rows · types · stopwords     ┐
@@ -44,6 +45,33 @@
 | Embedding | `intfloat/multilingual-e5-base` · 768-dim | local, MPS |
 | Reranking | `BAAI/bge-reranker-v2-m3` | local, MPS |
 | Answer | `gpt-4o-mini` (any OpenAI-compatible endpoint) | API |
+
+---
+
+## 🌐 Sources
+
+| Board | Ads | Coverage |
+|---|---|---|
+| `academicpositions` | 2,002 | Europe-wide |
+| `academictransfer` | 840 | Netherlands |
+
+**No site is named anywhere in the code.** `sites.yml` holds everything specific to
+one, and both scripts loop over it.
+
+```yaml
+  - name: academictransfer
+    sitemap_index: https://www.academictransfer.com/sitemap.xml
+    sitemap_match: vacancies    # which child sitemap holds the ads
+    job_url_contains: /jobs/    # so category pages are skipped
+    id_pattern: '/jobs/(\d+)/'  # where the ad's own id sits in the URL
+    delay: 10                   # seconds between requests
+```
+
+Adding a board is a new block here, then `python scrape.py --one` to check the page
+parses. `extract.py` needs no change as long as the page carries a
+[`JobPosting`](https://schema.org/JobPosting) JSON-LD block — it is found whether it
+sits at the top level or nested under `mainEntity`, and the advert body is taken from
+whichever of the JSON-LD `description` or the LinkedIn share link is **longer**.
 
 ---
 
@@ -141,8 +169,9 @@ Three tables. `psql -d positions`
 | `source`, `source_id` | `text` | **primary key** — board + its own ad id |
 | `url` | `text` | canonical link |
 | `title`, `employer` | `text` | from JSON-LD |
-| `city`, `country`, `street`, `postcode` | `text` | from JSON-LD |
-| `industry`, `summary` | `text` | from JSON-LD |
+| `city`, `country`, `street`, `postcode` | `text` | from JSON-LD, verbatim |
+| `industry` | `text` | from JSON-LD, not published by every board |
+| `summary` | `text` | the ~160-char blurb, from `<meta name="description">` |
 | `posted_at`, `closes_at` | `timestamptz` | from JSON-LD |
 | `description` | `text` | full advert body, ~6,000 chars |
 | `embed_text` | `text` | exactly what was embedded |
@@ -152,7 +181,14 @@ Three tables. `psql -d positions`
 | `html_file`, `first_seen`, `last_seen` | | bookkeeping |
 | `closed_at`, `extracted_at`, `embedded_at` | `timestamptz` | |
 
-### `position_chunks` — ~6.3 rows per advert
+Two things are stored as each board writes them rather than normalised:
+
+- **`country`** is `The Netherlands` on one board and `NL` on the other.
+- **251 rows are the same job on both boards** — 125 jobs, all Dutch employers.
+  Kept, because the two copies carry different deadlines and one often stays live
+  after the other closes.
+
+### `position_chunks` — ~5.8 rows per advert
 
 | Column | Type | |
 |---|---|---|
@@ -173,16 +209,20 @@ Three tables. `psql -d positions`
 <summary>Useful queries</summary>
 
 ```sql
--- where things stand
-SELECT count(*) AS total,
-       count(embedding) AS embedded,
+-- where things stand, per board
+SELECT source, count(*) AS total, count(embedding) AS embedded,
        count(*) FILTER (WHERE closes_at > now()) AS still_open
-  FROM positions;
+  FROM positions GROUP BY source;
 
 -- open PhD positions by country
 SELECT country, count(*) FROM positions
  WHERE 'phd' = ANY(position_type) AND (closes_at IS NULL OR closes_at > now())
  GROUP BY country ORDER BY 2 DESC;
+
+-- the same job on both boards
+SELECT lower(trim(title)) AS job, count(*), array_agg(DISTINCT source)
+  FROM positions GROUP BY 1
+ HAVING count(DISTINCT source) > 1 ORDER BY 2 DESC;
 
 -- the most common words
 SELECT word, share FROM stopwords ORDER BY share DESC LIMIT 20;
@@ -197,16 +237,17 @@ SELECT word, share FROM stopwords ORDER BY share DESC LIMIT 20;
 | File | |
 |---|---|
 | `scrape.py` | Sitemap → raw HTML. The only file that touches the internet |
-| `extract.py` | HTML → rows. Also `--types`, `--stopwords`, `--check` |
+| `extract.py` | HTML → rows. Also `--one`, `--types`, `--stopwords`, `--check` |
 | `embed.py` | Rows → vectors. `--all` per position, `--chunks` per passage |
 | `search.py` | Retrieval + reranking. Imported, not run alone |
 | `ask.py` | Written answer with citations |
 | `chat.py` | Web interface |
 | `update.py` | Runs the six steps in order |
-| `sites.yml` | Which boards, and how to read them |
+| `sites.yml` | Which boards, and how to read them. The only place a site is named |
 | `schema.sql` | The tables. Re-runnable |
 
-`data/` holds the downloaded pages — not committed, ~340 MB, regenerable.
+`data/raw/<board>/<id>.html` holds the downloaded pages — not committed, and
+regenerable from the sitemaps. The folder name is where `extract.py` gets `source`.
 
 ---
 
