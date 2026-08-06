@@ -209,7 +209,9 @@ main{max-width:88rem;margin:0 auto;padding:1.3rem 1.4rem 4rem;display:grid;
     </select>
   </div>
   <div class="field" id="f-open">
-    <input type="checkbox" id="openonly"><label for="openonly">Open only</label>
+    <!-- Ticked by default: a position whose deadline has passed cannot be applied
+         for, so showing it only spends a slot. Untick to see them anyway. -->
+    <input type="checkbox" id="openonly" checked><label for="openonly">Open only</label>
   </div>
   <div class="field" id="f-hybrid">
     <input type="checkbox" id="hybrid" checked>
