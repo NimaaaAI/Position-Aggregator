@@ -7,9 +7,9 @@
 ![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/postgres-16-4169E1?logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-0.8-000000)
-![Sources](https://img.shields.io/badge/sources-2-blueviolet)
-![Positions](https://img.shields.io/badge/positions-2%2C842-success)
-![Chunks](https://img.shields.io/badge/chunks-16%2C565-success)
+![Sources](https://img.shields.io/badge/sources-3-blueviolet)
+![Positions](https://img.shields.io/badge/positions-5%2C058-success)
+![Chunks](https://img.shields.io/badge/chunks-24%2C951-success)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)
 
 </div>
@@ -19,9 +19,9 @@
 ## 🔄 Flow
 
 ```
-   academicpositions.com   academictransfer.com
-            └───────────┬───────────┘
-   ┌────────────────────▼────────────┐
+  academicpositions   academictransfer   jobs.ac.uk
+            └────────────────┼────────────────┘
+   ┌────────────────────────▼────────┐
    │   scrape.py     │  sitemap → raw HTML on disk
    ├─────────────────┤
    │   extract.py    │  HTML → rows · types · stopwords     ┐
@@ -50,28 +50,36 @@
 
 ## 🌐 Sources
 
-| Board | Ads | Coverage |
+| Board | Positions | Coverage |
 |---|---|---|
-| `academicpositions` | 2,002 | Europe-wide |
-| `academictransfer` | 840 | Netherlands |
+| `academicpositions` | 2,045 | Europe-wide, research posts |
+| `academictransfer` | 888 | Netherlands, research posts |
+| `jobsacuk` | 2,125 | UK and international, all university roles |
 
 **No site is named anywhere in the code.** `sites.yml` holds everything specific to
 one, and both scripts loop over it.
 
 ```yaml
-  - name: academictransfer
-    sitemap_index: https://www.academictransfer.com/sitemap.xml
-    sitemap_match: vacancies    # which child sitemap holds the ads
-    job_url_contains: /jobs/    # so category pages are skipped
-    id_pattern: '/jobs/(\d+)/'  # where the ad's own id sits in the URL
-    delay: 10                   # seconds between requests
+  - name: jobsacuk
+    sitemap_index: https://www.jobs.ac.uk/sitemapindex.xml
+    sitemap_match: sitemap0         # which child sitemap holds the ads
+    job_url_contains: /job/         # so ordinary pages are skipped
+    id_pattern: '/job/([A-Za-z0-9]+)'   # where the ad's own id sits in the URL
+    delay: 2                        # seconds between requests
 ```
 
-Adding a board is a new block here, then `python scrape.py --one` to check the page
-parses. `extract.py` needs no change as long as the page carries a
-[`JobPosting`](https://schema.org/JobPosting) JSON-LD block — it is found whether it
-sits at the top level or nested under `mainEntity`, and the advert body is taken from
-whichever of the JSON-LD `description` or the LinkedIn share link is **longer**.
+Adding a board is a new block here, then `scrape.py --one` and `extract.py --one` to
+check a real page parses before downloading thousands. No code change is needed as
+long as the page carries a [`JobPosting`](https://schema.org/JobPosting) JSON-LD
+block. Boards vary in ways the extractor already absorbs:
+
+| Varies | Handled by |
+|---|---|
+| Block at top level, or nested under `mainEntity` | both are checked |
+| Advert body in the JSON-LD, or only in the page's share link | both read, **longer wins** |
+| `jobLocation` a single place, or a list of them | first entry taken |
+| Ad id numeric (`358334`) or alphanumeric (`DQH648`) | `id_pattern` per board |
+| Sitemap URLs with or without `https://` | added when missing |
 
 ---
 
@@ -142,8 +150,11 @@ python ask.py --models
 python chat.py            # → http://127.0.0.1:8000
 ```
 
-Answer on the left, every retrieved position with its scores on the right.
-The type dropdown and **open only** checkbox apply the same filters as the flags below.
+Answer on the left, every retrieved position with its scores on the right — each with
+its opening line, which board it came from, and how long is left to apply.
+
+The type dropdown and **open only** checkbox are the same filters as `--type` and
+`--open` below. **Open only starts ticked**; the terminal still needs the flag.
 
 ### Flags
 
@@ -183,12 +194,13 @@ Three tables. `psql -d positions`
 
 Two things are stored as each board writes them rather than normalised:
 
-- **`country`** is `The Netherlands` on one board and `NL` on the other.
-- **251 rows are the same job on both boards** — 125 jobs, all Dutch employers.
-  Kept, because the two copies carry different deadlines and one often stays live
-  after the other closes.
+- **`country`** is `The Netherlands` on one board, `NL` on another, `China` on a third.
+- **Some jobs appear on more than one board** — mostly Dutch employers who post to
+  both national and Europe-wide sites. Kept, because the copies carry different
+  deadlines and one often stays live after the other closes. The query below counts
+  them.
 
-### `position_chunks` — ~5.8 rows per advert
+### `position_chunks` — ~4.9 rows per advert
 
 | Column | Type | |
 |---|---|---|
@@ -204,6 +216,10 @@ Two things are stored as each board writes them rather than normalised:
 | `word` | `text` | **primary key** |
 | `ndoc` | `integer` | adverts containing it |
 | `share` | `real` | fraction of all adverts (kept above `0.25`) |
+
+Currently 185 words. It is recomputed on every update rather than written down: when
+2,208 English adverts joined a mostly-continental corpus the list rewrote itself from
+241 words to 185, because which words are too common is a property of the data.
 
 <details>
 <summary>Useful queries</summary>

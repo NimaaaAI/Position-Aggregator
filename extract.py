@@ -79,7 +79,13 @@ def read(path):
     if job is None:
         return None
 
-    address = (job.get("jobLocation") or {}).get("address") or {}
+    # jobLocation is one Place on some boards and a list of them on others; schema.org
+    # allows either. A post advertised in several places keeps the first, because the
+    # alternative is a row per location and the primary key does not allow that.
+    location = job.get("jobLocation") or {}
+    if isinstance(location, list):
+        location = location[0] if location else {}
+    address = location.get("address") or {}
     organisation = job.get("hiringOrganization") or {}
 
     canonical = soup.find("link", rel="canonical")

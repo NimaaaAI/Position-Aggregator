@@ -87,10 +87,19 @@ COLUMNS = """source, source_id, title, employer, city, country, closes_at, url, 
 P_COLUMNS = ", ".join(f"p.{name.strip()}" for name in COLUMNS.split(","))
 
 
+# Every query selects COLUMNS and then one score, so the score sits just past the
+# last column. Derived rather than written out: adding a column to COLUMNS used to
+# shift every index silently, which is exactly the kind of error that produces wrong
+# results instead of an error.
+NAMES = [name.strip() for name in COLUMNS.split(",")]
+SCORE = len(NAMES)
+
+
 def as_result(row, vector_score=None, chunk_score=None, text_score=None):
+    # strict=False on purpose: row carries the trailing score, which is read
+    # separately and has no name here.
     return {
-        "source_id": row[0], "title": row[1], "employer": row[2], "city": row[3],
-        "country": row[4], "closes_at": row[5], "url": row[6], "description": row[7],
+        **dict(zip(NAMES, row, strict=False)),
         "vector_score": vector_score, "chunk_score": chunk_score,
         "text_score": text_score, "rerank_score": None, "fused_score": 0.0,
     }
@@ -244,8 +253,10 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
             """,
             params,
         ).fetchall():
-            found[row[0]] = as_result(row, vector_score=float(row[8]))
-            vector_order.append(row[0])
+            # Keyed on (source, source_id), because two boards number their ads
+            # independently and both can publish an ad 250476.
+            found[row[:2]] = as_result(row, vector_score=float(row[SCORE]))
+            vector_order.append(row[:2])
 
         if chunked and has_chunks(conn):
             # Every chunk is scored and each position keeps its best. No shortlist
@@ -267,11 +278,11 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
                 """,
                 params,
             ).fetchall():
-                if row[0] in found:
-                    found[row[0]]["chunk_score"] = float(row[8])
+                if row[:2] in found:
+                    found[row[:2]]["chunk_score"] = float(row[SCORE])
                 else:
-                    found[row[0]] = as_result(row, chunk_score=float(row[8]))
-                chunk_order.append(row[0])
+                    found[row[:2]] = as_result(row, chunk_score=float(row[SCORE]))
+                chunk_order.append(row[:2])
 
         if hybrid:
             # Strict query first, then loose to top up. Anything already found by
@@ -292,13 +303,13 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
                     """,
                     {**params, "q": query, "remaining": wanted - len(text_order)},
                 ).fetchall():
-                    if row[0] in text_order:
+                    if row[:2] in text_order:
                         continue
-                    if row[0] in found:
-                        found[row[0]]["text_score"] = float(row[8])
+                    if row[:2] in found:
+                        found[row[:2]]["text_score"] = float(row[SCORE])
                     else:
-                        found[row[0]] = as_result(row, text_score=float(row[8]))
-                    text_order.append(row[0])
+                        found[row[:2]] = as_result(row, text_score=float(row[SCORE]))
+                    text_order.append(row[:2])
 
     fused = fuse([vector_order, chunk_order, text_order])
     for key, score in fused.items():

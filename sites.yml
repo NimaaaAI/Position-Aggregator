@@ -23,3 +23,18 @@ sites:
     job_url_contains: /jobs/
     id_pattern: '/jobs/(\d+)/'  # the number after /jobs/, not the slug after it
     delay: 10
+
+  # https://www.jobs.ac.uk/job/<id>/<job-title>
+  #
+  # The id is letters and digits here (DQH648), not a number, which is why
+  # id_pattern is a regex per site rather than a rule in the code.
+  #
+  # Their sitemap index names a single child, sitemap0.xml, holding both adverts
+  # and ordinary pages -- job_url_contains drops the latter. Both files redirect to
+  # S3; requests follows that on its own.
+  - name: jobsacuk
+    sitemap_index: https://www.jobs.ac.uk/sitemapindex.xml
+    sitemap_match: sitemap0
+    job_url_contains: /job/
+    id_pattern: '/job/([A-Za-z0-9]+)'
+    delay: 2

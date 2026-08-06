@@ -89,6 +89,12 @@ for site in sites:
             body = get(sitemap).text
             urls += [u for u in re.findall(r"<loc>([^<]+)</loc>", body)
                      if site["job_url_contains"] in u]
+
+        # jobs.ac.uk writes its <loc> values without a scheme -- "www.jobs.ac.uk/job/
+        # DQH648/..." -- which requests rejects outright. Fixed here rather than at
+        # download time so the saved URL list, the id, and the ad's stored URL all
+        # agree, and so nothing downstream has to know a site did this.
+        urls = [u if u.startswith("http") else f"https://{u}" for u in urls]
         urls = sorted(set(urls))
 
         # Compare against the previous run before overwriting it. An ad that has
