@@ -38,6 +38,12 @@ SHARE_LINK = re.compile(r"linkedin\.com/shareArticle")
 # tokens and silently ignores the rest, so more than this is wasted.
 EMBED_CHARS = 1500
 
+# Keyed by name, which is also the folder scrape.py saved each board's pages into.
+# Read here so that read() can look a board up from the file path and stay a
+# one-argument function.
+SITES = {site["name"]: site
+         for site in yaml.safe_load((ROOT / "sites.yml").read_text(encoding="utf-8"))["sites"]}
+
 
 def json_ld_job(soup):
     """The JobPosting block, if the page has one.
@@ -61,6 +67,60 @@ def json_ld_job(soup):
     return None
 
 
+def labelled_job(soup, labels):
+    """A JobPosting built from the page's own <dt>/<dd> list, for boards that
+    publish no JSON-LD at all.
+
+    Government and Drupal sites tend to lay their facts out as a definition list --
+    "Organisation/Company", "Application Deadline", "City" -- which is as good as
+    JSON-LD once you know which label means what. That knowledge is the only part
+    that differs per board, so it lives in sites.yml as `fields` and this function
+    stays about the shape of the HTML rather than about any one site.
+
+    The result is the same shape json_ld_job returns, so everything after this
+    point handles both without knowing which it got.
+    """
+    if not labels:
+        return None
+
+    # First definition of a term wins: these pages repeat "Country" and "City" in a
+    # second list further down, and the first one is the advert's own.
+    values = {}
+    for term in soup.find_all("dt"):
+        definition = term.find_next_sibling("dd")
+        if definition is not None:
+            values.setdefault(" ".join(term.get_text(" ", strip=True).split()), definition)
+
+    def field(name):
+        tag = values.get(labels.get(name, ""))
+        if tag is None:
+            return None
+        # A <time datetime="..."> carries the machine-readable form; its text is
+        # something like "13 Sep 2026 - 22:00 (UTC)", which no parser should meet.
+        moment = tag.find("time")
+        if moment is not None and moment.get("datetime"):
+            return moment["datetime"]
+        return " ".join(tag.get_text(" ", strip=True).split()) or None
+
+    title = soup.find("meta", property="og:title")
+    if not (title and title.get("content")):
+        return None
+
+    return {
+        "title": title["content"],
+        "validThrough": field("closes_at"),
+        "datePosted": field("posted_at"),
+        "industry": field("industry"),
+        "hiringOrganization": {"name": field("employer")},
+        "jobLocation": {"address": {
+            "addressLocality": field("city"),
+            "addressCountry": field("country"),
+            "streetAddress": field("street"),
+            "postalCode": field("postcode"),
+        }},
+    }
+
+
 def when(value):
     """"2026-06-26T14:17:46+02:00" -> datetime, or None."""
     if not value:
@@ -74,8 +134,12 @@ def when(value):
 def read(path):
     """One saved HTML file -> a dict matching the positions table, or None."""
     soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
+    site = SITES.get(path.parent.name) or {}
 
-    job = json_ld_job(soup)
+    # JSON-LD wherever a board publishes it, and failing that the page's own
+    # definition list. Tried in this order because JSON-LD is the board's own
+    # machine-readable answer and needs no configuration to read.
+    job = json_ld_job(soup) or labelled_job(soup, site.get("fields") or {})
     if job is None:
         return None
 
@@ -99,11 +163,15 @@ def read(path):
     # So both are read and the longer wins. That needs no per-site rule, no name in
     # this file, and keeps working if either site changes which field it fills -- the
     # blurb can never beat the advert on length.
+    # A third place, for boards that keep the advert in the page itself: sites.yml
+    # names the element. Still just another candidate -- the longest still wins.
     bodies = [job.get("description") or ""]
     share = soup.find("a", href=SHARE_LINK)
     if share and share.get("href"):
         query = urllib.parse.urlparse(share["href"]).query
         bodies.append(urllib.parse.parse_qs(query).get("summary", [""])[0])
+    if site.get("body_selector"):
+        bodies += [str(tag) for tag in soup.select(site["body_selector"])]
 
     bodies = [re.sub(r"\s+", " ", BeautifulSoup(html, "html.parser").get_text(" ", strip=True)).strip()
               for html in bodies if html]
@@ -537,7 +605,7 @@ if args.check_types:
     check_types()
     sys.exit(0)
 
-sites = yaml.safe_load((ROOT / "sites.yml").read_text(encoding="utf-8"))["sites"]
+sites = list(SITES.values())
 
 for site in sites:
     files = sorted((ROOT / "data" / "raw" / site["name"]).glob("*.html"))

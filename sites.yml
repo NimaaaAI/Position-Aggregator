@@ -38,3 +38,38 @@ sites:
     job_url_contains: /job/
     id_pattern: '/job/([A-Za-z0-9]+)'
     delay: 2
+
+  # https://euraxess.ec.europa.eu/jobs/<id>
+  #
+  # The European Commission's researcher portal, and the only one of these carrying
+  # Italy, Spain and Portugal in any number -- the countries the other three barely
+  # reach. About 9,200 vacancies.
+  #
+  # Collected differently from the rest: their sitemap lists basic pages, events and
+  # news, but no vacancies at all, so the URLs come from walking the search listing.
+  # listing_url + page_param select that route; the other three keep the sitemap one.
+  #
+  # ROBOTS: their robots.txt says "Disallow: /jobs/*" and "Disallow: /*?", which
+  # covers both the adverts and the paginated listing. Downloaded anyway, by the
+  # owner's decision, for one person's job search. The terms of that decision:
+  # a delay of 3s -- slower than any other board here -- an honest User-Agent, no
+  # attempt to defeat rate limiting, bot detection or any other control, and we stop
+  # at the first sign of being blocked rather than working around it.
+  # Read differently too: the only board here publishing no JobPosting JSON-LD. Its
+  # facts are laid out as a <dt>/<dd> definition list instead, so `fields` says which
+  # label holds which column and `body_selector` says where the advert itself sits.
+  # extract.py falls back to that whenever the JSON-LD is missing.
+  - name: euraxess
+    listing_url: https://euraxess.ec.europa.eu/jobs/search
+    page_param: page            # ?page=0, 1, 2 ... zero-indexed
+    id_pattern: '/jobs/(\d+)'   # "/jobs/459098" is an ad, "/jobs/search" is not
+    delay: 3
+    fields:
+      employer: Organisation/Company
+      city: City
+      country: Country
+      street: Street
+      postcode: Postal Code
+      closes_at: Application Deadline
+      industry: Research Field
+    body_selector: '#offer-description ~ div.ecl'

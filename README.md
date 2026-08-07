@@ -7,9 +7,9 @@
 ![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/postgres-16-4169E1?logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-0.8-000000)
-![Sources](https://img.shields.io/badge/sources-3-blueviolet)
-![Positions](https://img.shields.io/badge/positions-5%2C058-success)
-![Chunks](https://img.shields.io/badge/chunks-24%2C951-success)
+![Sources](https://img.shields.io/badge/sources-4-blueviolet)
+![Positions](https://img.shields.io/badge/positions-6%2C505-success)
+![Chunks](https://img.shields.io/badge/chunks-31%2C012-success)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)
 
 </div>
@@ -19,9 +19,9 @@
 ## 🔄 Flow
 
 ```
-  academicpositions   academictransfer   jobs.ac.uk
-            └────────────────┼────────────────┘
-   ┌────────────────────────▼────────┐
+  academicpositions  academictransfer  jobs.ac.uk  euraxess
+            └───────────────┴────┬───────────┴──────────┘
+   ┌────────────────────────────▼────┐
    │   scrape.py     │  sitemap → raw HTML on disk
    ├─────────────────┤
    │   extract.py    │  HTML → rows · types · stopwords     ┐
@@ -53,33 +53,48 @@
 | Board | Positions | Coverage |
 |---|---|---|
 | `academicpositions` | 2,045 | Europe-wide, research posts |
-| `academictransfer` | 888 | Netherlands, research posts |
-| `jobsacuk` | 2,125 | UK and international, all university roles |
+| `academictransfer` | 913 | Netherlands, research posts |
+| `jobsacuk` | 2,136 | UK and international, all university roles |
+| `euraxess` | 1,411 | EU-wide — the only one reaching Italy, Spain, Poland, Czechia |
 
 **No site is named anywhere in the code.** `sites.yml` holds everything specific to
-one, and both scripts loop over it.
+one, and the scripts loop over it.
 
 ```yaml
   - name: jobsacuk
     sitemap_index: https://www.jobs.ac.uk/sitemapindex.xml
-    sitemap_match: sitemap0         # which child sitemap holds the ads
-    job_url_contains: /job/         # so ordinary pages are skipped
+    sitemap_match: sitemap0             # which child sitemap holds the ads
+    job_url_contains: /job/             # so ordinary pages are skipped
     id_pattern: '/job/([A-Za-z0-9]+)'   # where the ad's own id sits in the URL
-    delay: 2                        # seconds between requests
+    delay: 2                            # seconds between requests
 ```
 
 Adding a board is a new block here, then `scrape.py --one` and `extract.py --one` to
-check a real page parses before downloading thousands. No code change is needed as
-long as the page carries a [`JobPosting`](https://schema.org/JobPosting) JSON-LD
-block. Boards vary in ways the extractor already absorbs:
+check a real page parses before downloading thousands. Boards differ in ways the two
+scripts already absorb, each from config rather than a branch in the code:
 
 | Varies | Handled by |
 |---|---|
-| Block at top level, or nested under `mainEntity` | both are checked |
-| Advert body in the JSON-LD, or only in the page's share link | both read, **longer wins** |
-| `jobLocation` a single place, or a list of them | first entry taken |
-| Ad id numeric (`358334`) or alphanumeric (`DQH648`) | `id_pattern` per board |
+| Ads listed in a sitemap, or only on paginated search pages | `sitemap_index` or `listing_url` |
 | Sitemap URLs with or without `https://` | added when missing |
+| Ad id numeric (`358334`) or alphanumeric (`DQH648`) | `id_pattern` per board |
+| `JobPosting` at the top level, or nested under `mainEntity` | both are checked |
+| No `JobPosting` at all — facts in a `<dt>`/`<dd>` list | `fields` maps label → column |
+| Advert body in the JSON-LD, the share link, or the page | all read, **longest wins** |
+| `jobLocation` a single place, or a list of them | first entry taken |
+
+### On EURAXESS
+
+Two things are worth stating plainly.
+
+Its robots.txt disallows `/jobs/*`, and it is downloaded anyway — the owner's decision,
+for one person's job search. The terms: a 3-second delay (the slowest here), an honest
+User-Agent, `Retry-After` honoured when the server rate-limits, and no attempt to
+defeat any control. A refusal stops the crawl rather than being worked around.
+
+It is also the only board with **no** structured job data, which is why `extract.py`
+has a definition-list fallback at all. Its 8,128 adverts are still being collected;
+the count above is what has landed so far.
 
 ---
 
@@ -194,13 +209,14 @@ Three tables. `psql -d positions`
 
 Two things are stored as each board writes them rather than normalised:
 
-- **`country`** is `The Netherlands` on one board, `NL` on another, `China` on a third.
-- **Some jobs appear on more than one board** — mostly Dutch employers who post to
-  both national and Europe-wide sites. Kept, because the copies carry different
-  deadlines and one often stays live after the other closes. The query below counts
-  them.
+- **`country`** is written three different ways for the Netherlands alone — `NL`,
+  `The Netherlands`, `Netherlands` — because each board writes it its own way.
+- **Many jobs appear on more than one board.** EURAXESS in particular re-lists adverts
+  the national boards already carry. Kept, because the copies have different deadlines
+  and one often stays live after the other closes — but it costs result slots, and the
+  query below counts them.
 
-### `position_chunks` — ~4.9 rows per advert
+### `position_chunks` — ~4.8 rows per advert
 
 | Column | Type | |
 |---|---|---|
@@ -217,9 +233,9 @@ Two things are stored as each board writes them rather than normalised:
 | `ndoc` | `integer` | adverts containing it |
 | `share` | `real` | fraction of all adverts (kept above `0.25`) |
 
-Currently 185 words. It is recomputed on every update rather than written down: when
-2,208 English adverts joined a mostly-continental corpus the list rewrote itself from
-241 words to 185, because which words are too common is a property of the data.
+Currently 176 words, and it moves every time the corpus does — 241, then 185, then
+176 as each board arrived. Which words are too common to search for is a property of
+the data, so it is measured on every update rather than written down.
 
 <details>
 <summary>Useful queries</summary>
