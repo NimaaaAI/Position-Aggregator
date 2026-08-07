@@ -168,8 +168,9 @@ python chat.py            # → http://127.0.0.1:8000
 Answer on the left, every retrieved position with its scores on the right — each with
 its opening line, which board it came from, and how long is left to apply.
 
-The type dropdown and **open only** checkbox are the same filters as `--type` and
-`--open` below. **Open only starts ticked**; the terminal still needs the flag.
+The type dropdown, **open only** and **merge copies** are the same as `--type`,
+`--open` and `--no-dedupe` below. Open-only and merging start on; the terminal needs
+`--open` explicitly and merges unless told not to.
 
 ### Flags
 
@@ -179,8 +180,34 @@ The type dropdown and **open only** checkbox are the same filters as `--type` an
 | `--open` | Hide positions whose deadline has passed |
 | `--rerank` | Re-score results with the cross-encoder |
 | `--limit N` | Results to retrieve. Default `60` |
+| `--no-dedupe` | Show every board's copy of a job separately |
 | `--no-hybrid` | Disable full-text |
 | `--no-chunks` | Disable chunk vectors |
+
+---
+
+## 🔗 The same job on several boards
+
+Four boards overlap, so one job can occupy several of the ten slots the model sees.
+Search shows one row and hangs the others off it as **also on …**, with their links
+intact. `--no-dedupe` shows every copy.
+
+```
+same title  AND  same city  AND  different source  →  the same job
+```
+
+All three parts are needed, and each was added because of a case that broke without it:
+
+| Part | Without it |
+|---|---|
+| source must **differ** | three IT:U ads all titled *"PhD Student (f/m/d)"* merge into one |
+| city must **match** | six universities advertising *"Assistant Professor"* — Poznań, Bydgoszcz, Hong Kong, Nottingham — become one |
+| employer is **not** compared | the same place is `Umeå universitet` on one board and `Umeå University` on another |
+
+It runs **after** ranking and reranking, so the best-scoring copy is the one kept and
+collapsing cannot change which positions were found. Nothing is deleted, and a
+position with no city is never collapsed — failing to merge is harmless, merging
+wrongly is not.
 
 ---
 
@@ -211,10 +238,10 @@ Two things are stored as each board writes them rather than normalised:
 
 - **`country`** is written three different ways for the Netherlands alone — `NL`,
   `The Netherlands`, `Netherlands` — because each board writes it its own way.
-- **Many jobs appear on more than one board.** EURAXESS in particular re-lists adverts
-  the national boards already carry. Kept, because the copies have different deadlines
-  and one often stays live after the other closes — but it costs result slots, and the
-  query below counts them.
+- **Many jobs appear on more than one board** — 363 of them, 753 rows. EURAXESS in
+  particular re-lists adverts the national boards already carry. Every copy is kept,
+  because they carry different deadlines and one often stays live after the other
+  closes. Search collapses them for display instead; see below.
 
 ### `position_chunks` — ~4.8 rows per advert
 

@@ -149,6 +149,8 @@ main{max-width:88rem;margin:0 auto;padding:1.3rem 1.4rem 4rem;display:grid;
   border:1px solid var(--line);color:var(--muted);background:var(--panel-2);
   letter-spacing:.01em;white-space:nowrap}
 .badge.src{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
+.badge.alt{text-decoration:none;border-style:dashed}
+.badge.alt:hover{border-style:solid;color:var(--accent);border-color:var(--accent-line)}
 .badge.closed{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
 .badge.soon{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
 .scores{display:flex;align-items:center;gap:.55rem;margin-top:.5rem;flex-wrap:wrap;
@@ -217,6 +219,10 @@ main{max-width:88rem;margin:0 auto;padding:1.3rem 1.4rem 4rem;display:grid;
     <input type="checkbox" id="hybrid" checked>
     <label for="hybrid" title="Vector search plus Postgres full-text, fused by rank. Untick for vector only — try it on an acronym like MSCA or ERC Starting Grant.">Hybrid</label>
   </div>
+  <div class="field" id="f-dedupe">
+    <input type="checkbox" id="dedupe" checked>
+    <label for="dedupe" title="Several boards carry the same job. Ticked, one row is shown and the others appear as 'also on'. Untick to see every copy.">Merge copies</label>
+  </div>
   <div class="field">retrieve <input id="show" type="number" value="60" min="1" max="500"></div>
   <div class="field">to model <input id="ctx" type="number" value="10" min="0" max="60"></div>
   <div class="field"><select id="model"></select></div>
@@ -272,6 +278,7 @@ function payload() {
     context: +$('#ctx').value || 10,
     open_only: $('#openonly').checked,
     hybrid: $('#hybrid').checked,
+    dedupe: $('#dedupe').checked,
     position_type: $('#ptype').value || null,
     rerank: true,
   };
@@ -283,8 +290,9 @@ function paintFilters() {
   $('#f-type').classList.toggle('on', !!$('#ptype').value);
   $('#f-open').classList.toggle('on', $('#openonly').checked);
   $('#f-hybrid').classList.toggle('on', !$('#hybrid').checked);
+  $('#f-dedupe').classList.toggle('on', !$('#dedupe').checked);
 }
-for (const id of ['#ptype', '#openonly', '#hybrid']) $(id).onchange = paintFilters;
+for (const id of ['#ptype', '#openonly', '#hybrid', '#dedupe']) $(id).onchange = paintFilters;
 paintFilters();
 
 // A missing score means that search did not return this position at all, which is
@@ -330,6 +338,8 @@ function showPositions(positions, given) {
         <div class="badges">
           ${p.source ? `<span class="badge src">${esc(p.source)}</span>` : ''}
           ${deadline(p)}
+          ${(p.also_on || []).map(c => `<a class="badge alt" href="${esc(c.url)}"
+             target="_blank" rel="noopener">also on ${esc(c.source)}</a>`).join('')}
         </div>
         <div class="scores">
           ${p.rerank_score !== null && p.rerank_score !== undefined

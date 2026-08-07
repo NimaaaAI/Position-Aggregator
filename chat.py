@@ -42,6 +42,8 @@ class Question(BaseModel):
     open_only: bool = False
     rerank: bool = True
     hybrid: bool = True
+    # Collapse the same job carried by several boards into one row.
+    dedupe: bool = True
     # "phd", "postdoc", ... or None for any. Applied before ranking.
     position_type: str | None = None
 
@@ -71,6 +73,10 @@ def as_json(item):
         "rerank_score": (round(item["rerank_score"], 4)
                          if item["rerank_score"] is not None else None),
         "snippet": " ".join((item["description"] or "").split())[:300],
+        # The other boards carrying this same job, if any. Kept rather than dropped
+        # so their deadline and link stay reachable from the one row shown.
+        "also_on": [{"source": copy["source"], "url": copy["url"]}
+                    for copy in item.get("also_on", [])],
     }
 
 
@@ -88,6 +94,7 @@ def api_search(request: Question):
         request.question, limit=request.show,
         open_only=request.open_only, rerank=request.rerank,
         hybrid=request.hybrid, position_type=request.position_type or None,
+        dedupe=request.dedupe,
     )
     elapsed = time.perf_counter() - started
 
@@ -104,6 +111,7 @@ def api_chat(request: Question):
         request.question, limit=request.show,
         open_only=request.open_only, rerank=request.rerank,
         hybrid=request.hybrid, position_type=request.position_type or None,
+        dedupe=request.dedupe,
     )
     retrieval_ms = round((time.perf_counter() - started) * 1000)
 

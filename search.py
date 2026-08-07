@@ -191,8 +191,45 @@ def has_chunks(conn):
     return _chunks_built
 
 
+def collapse(results):
+    """One row per job, where several boards carry the same one.
+
+    The boards overlap heavily -- EURAXESS re-lists adverts the national sites
+    already have -- and every copy spends one of the ten slots the model sees.
+
+    A job is the same job when the title and the city match and the source does
+    not. All three parts are needed, and each was put there by a case that broke
+    without it:
+
+      - source must differ, or the three IT:U ads all titled "PhD Student (f/m/d)"
+        collapse into one, losing two real positions;
+      - city must match, or six different universities advertising "Assistant
+        Professor" -- Poznan, Bydgoszcz, Hong Kong, Nottingham -- become one;
+      - employer cannot be compared directly, because the same institution is
+        written "Umea universitet" on one board and "Umea University" on another.
+
+    Nothing is deleted. The copies that lose are attached to the winner as
+    `also_on` so the other board's link and deadline stay one click away.
+    """
+    best = {}
+    for item in results:
+        key = ((item["title"] or "").strip().lower(),
+               (item["city"] or "").strip().lower())
+        # A position with no city cannot be checked against the rule, so it is
+        # given a key of its own and never collapsed.
+        if not key[0] or not key[1]:
+            key = (id(item),)
+        if key not in best:
+            best[key] = item
+        else:
+            best[key].setdefault("also_on", []).append(
+                {"source": item["source"], "url": item["url"],
+                 "closes_at": item["closes_at"]})
+    return list(best.values())
+
+
 def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
-             hybrid=True, position_type=None, chunked=True):
+             hybrid=True, position_type=None, chunked=True, dedupe=True):
     """Find the positions that best answer `question`.
 
     Returns `limit` dicts, best first. Two searches run: vector similarity, which
@@ -330,6 +367,11 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
             item["rerank_score"] = float(score)
         results.sort(key=lambda item: -item["rerank_score"])
 
+    # Last, so that ranking decides which copy survives and collapsing cannot
+    # change what was found -- only how much of it is shown twice.
+    if dedupe:
+        results = collapse(results)
+
     return results[:limit]
 
 
@@ -359,6 +401,8 @@ def describe(item):
         f"{item['employer']} · {where} · {when}",
         item["url"],
     ]
+    if item.get("also_on"):
+        lines.append("also on " + ", ".join(c["source"] for c in item["also_on"]))
     snippet = " ".join((item["description"] or "").split())[:220]
     lines += textwrap.wrap(snippet, width=88)
     return lines
@@ -377,6 +421,8 @@ def main():
     parser.add_argument("--no-chunks", action="store_true",
                         help="score each position by its opening only, as before "
                              "chunking. For comparison")
+    parser.add_argument("--no-dedupe", action="store_true",
+                        help="show every board's copy of the same job separately")
     parser.add_argument("--type", dest="position_type",
                         choices=["phd", "postdoc", "professor", "lecturer",
                                  "researcher", "engineer", "student", "support"],
@@ -387,6 +433,7 @@ def main():
         args.question, limit=args.limit, open_only=args.open_only,
         rerank=args.rerank, hybrid=not args.no_hybrid,
         position_type=args.position_type, chunked=not args.no_chunks,
+        dedupe=not args.no_dedupe,
     )
     if not results:
         sys.exit("nothing found")
