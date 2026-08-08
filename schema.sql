@@ -158,5 +158,44 @@ CREATE TABLE IF NOT EXISTS position_chunks (
 CREATE INDEX IF NOT EXISTS position_chunks_embedding_idx
     ON position_chunks USING hnsw (embedding vector_cosine_ops);
 
+-- Who may use the web interface.
+--
+-- The password itself is never stored. What is kept is scrypt(password, salt):
+-- scrypt is a key-derivation function, deliberately slow and memory-hungry, so a
+-- stolen table cannot be turned back into passwords at any useful rate. It is in
+-- the standard library, so this costs no dependency.
+--
+-- Each user gets their own random salt, which is why two people choosing the same
+-- password still store different bytes.
+CREATE TABLE IF NOT EXISTS users (
+    username      text PRIMARY KEY,
+    password_hash bytea NOT NULL,
+    salt          bytea NOT NULL,
+    is_admin      boolean NOT NULL DEFAULT false,
+    active        boolean NOT NULL DEFAULT true,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    last_login    timestamptz
+);
+
+-- One row per signed-in browser.
+--
+-- The cookie holds only a random token; everything else about the session lives
+-- here. That is what makes it revocable: delete the row and the next request from
+-- that browser is signed out, with nothing to do on the browser's side.
+CREATE TABLE IF NOT EXISTS sessions (
+    token      text PRIMARY KEY,
+    username   text NOT NULL REFERENCES users (username) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    last_seen  timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL,
+    ip         text,
+    user_agent text
+);
+
+CREATE INDEX IF NOT EXISTS sessions_username_idx ON sessions (username);
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx   ON sessions (expires_at);
+
 ALTER TABLE positions OWNER TO positions;
 ALTER TABLE position_chunks OWNER TO positions;
+ALTER TABLE users OWNER TO positions;
+ALTER TABLE sessions OWNER TO positions;

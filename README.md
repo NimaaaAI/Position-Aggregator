@@ -123,6 +123,12 @@ psql -d positions -f schema.sql
 cp .env.example .env      # paste your key into LLM_API_KEY
 ```
 
+**An account**, because the web interface will not serve anyone without one.
+
+```bash
+python chat.py --add-user nima --admin
+```
+
 ---
 
 ## ▶️ Running it
@@ -165,6 +171,9 @@ python ask.py --models
 python chat.py            # → http://127.0.0.1:8000
 ```
 
+Asks you to sign in first. `--add-user <name>` creates an account or resets a
+password; `--admin` marks someone as an administrator.
+
 Answer on the left, every retrieved position with its scores on the right — each with
 its opening line, which board it came from, and how long is left to apply.
 
@@ -183,6 +192,39 @@ The type dropdown, **open only** and **merge copies** are the same as `--type`,
 | `--no-dedupe` | Show every board's copy of a job separately |
 | `--no-hybrid` | Disable full-text |
 | `--no-chunks` | Disable chunk vectors |
+
+---
+
+## 🔐 Access
+
+Nobody reaches the search page without an account, and accounts are only ever made
+from the command line. **There is no registration** — one fewer thing to defend.
+
+```bash
+python chat.py --add-user colleague          # prompts twice, echoes nothing
+python chat.py --add-user colleague          # run again to reset that password
+```
+
+**Passwords** are stored as `scrypt(password, per-user salt)` using `hashlib` from the
+standard library. The password itself is never written down, and two people who
+choose the same one still store different bytes.
+
+**Sessions** are a random token in an `HttpOnly` cookie; everything real about the
+session lives in the `sessions` table. Deleting a row signs that browser out on its
+next request, with nothing to do at the browser's end.
+
+**Every endpoint checks**, not only the page — a redirect on `/` would be pointless
+if `/api/search` still answered anyone who asked.
+
+```sql
+-- who has signed in, and from where
+SELECT username, created_at, last_seen, ip FROM sessions ORDER BY last_seen DESC;
+
+-- sign someone out now
+DELETE FROM sessions WHERE username = 'colleague';
+```
+
+Bound to `127.0.0.1`, so it is reachable from this machine only.
 
 ---
 
@@ -252,6 +294,22 @@ Two things are stored as each board writes them rather than normalised:
 | `embedding` | `vector(768)` | HNSW · `vector_cosine_ops` |
 | `embedded_at` | `timestamptz` | |
 
+### `users` and `sessions` — who may use the web interface
+
+| `users` | | |
+|---|---|---|
+| `username` | `text` | **primary key** |
+| `password_hash`, `salt` | `bytea` | `scrypt`, never the password |
+| `is_admin`, `active` | `boolean` | |
+| `created_at`, `last_login` | `timestamptz` | |
+
+| `sessions` | | |
+|---|---|---|
+| `token` | `text` | **primary key** — the value in the cookie |
+| `username` | `text` | FK → `users` `ON DELETE CASCADE` |
+| `expires_at`, `created_at`, `last_seen` | `timestamptz` | |
+| `ip`, `user_agent` | `text` | where the sign-in came from |
+
 ### `stopwords` — recomputed every update
 
 | Column | Type | |
@@ -300,7 +358,8 @@ SELECT word, share FROM stopwords ORDER BY share DESC LIMIT 20;
 | `embed.py` | Rows → vectors. `--all` per position, `--chunks` per passage |
 | `search.py` | Retrieval + reranking. Imported, not run alone |
 | `ask.py` | Written answer with citations |
-| `chat.py` | Web interface |
+| `chat.py` | Web interface and sign-in. Also `--add-user` |
+| `templates/` | `chat.html` the search page · `login.html` the sign-in page |
 | `update.py` | Runs the six steps in order |
 | `sites.yml` | Which boards, and how to read them. The only place a site is named |
 | `schema.sql` | The tables. Re-runnable |
