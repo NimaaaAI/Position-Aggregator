@@ -179,6 +179,40 @@ main{max-width:80rem;margin:0 auto;padding:2rem 1.6rem 5rem;display:grid;
   vertical-align:-.05rem;margin-right:.5rem}
 @keyframes s{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- phones ---------- */
+/* The masthead reflows into two rows -- name and account first, the database
+   counts underneath -- because three groups on one line at 390px leaves each of
+   them a few characters wide. */
+@media (max-width:40rem){
+  .mast-in{padding:.9rem 1.1rem .7rem;gap:.55rem}
+  .wordmark{font-size:1.5rem;order:1}
+  .whoami{order:2;margin-left:auto;border-left:0;padding-left:0;gap:.85rem}
+  .masthead .dbstat{order:3;width:100%;margin-left:0;gap:1.2rem}
+  .stat b{font-size:1rem;display:inline;margin-right:.25rem}
+
+  /* The two buttons drop below the question rather than squeezing beside it,
+     and share the width between them. */
+  .hero{padding:1.3rem 1.1rem 0}
+  .askline{flex-wrap:wrap;gap:.55rem;border-bottom:0;padding-bottom:0}
+  #q{flex-basis:100%;min-width:0;font-size:1.2rem;padding-bottom:.35rem;
+     border-bottom:2px solid var(--ink)}
+  #q:focus{border-bottom-color:var(--accent)}
+  .btn{flex:1;text-align:center;padding:.6rem .5rem}
+
+  .filters{padding:.85rem 1.1rem 0;gap:.35rem 1.1rem}
+  .chips{padding:1rem 1.1rem 0}
+  main{padding:1.5rem 1.1rem 3.5rem}
+  .col-head{margin-bottom:1rem}
+
+  .pos{grid-template-columns:1.4rem 1fr;gap:.65rem;padding:1rem 0}
+  .pos.given{box-shadow:-1.1rem 0 0 var(--accent-soft),1rem 0 0 transparent}
+  .rank{font-size:.95rem}
+  .ptitle{font-size:1.02rem}
+  #answer{font-size:1rem}
+  .stats{gap:.5rem 1.1rem}
+  .scores{gap:.5rem .7rem}
+}
 </style>
 </head>
 <body>

@@ -91,6 +91,21 @@ th.num{text-align:right;padding-right:1.2rem}
 .empty{color:var(--ink-3);font-family:var(--serif);font-style:italic;padding:1.2rem 0}
 .err{border-left:2px solid var(--red);background:var(--red-soft);color:var(--red);
   padding:.6rem .85rem;font-size:.85rem;margin-bottom:1rem}
+
+/* Phones. The tables keep their columns and scroll sideways inside .scroll --
+   stacking each row into a card would lose the comparison between people, which
+   is the only reason to look at this page. */
+@media (max-width:40rem){
+  .mast-in{padding:.9rem 1.1rem .7rem;gap:.5rem}
+  .wordmark{font-size:1.5rem}
+  .mast-in nav{gap:1rem}
+  main{padding:1.5rem 1.1rem 3.5rem}
+  section{margin-bottom:2.2rem}
+  h2{font-size:1.2rem}
+  .scroll{margin:0 -1.1rem;padding:0 1.1rem}
+  table{font-size:.82rem}
+  .act{margin-bottom:.25rem}
+}
 </style>
 </head>
 <body>
