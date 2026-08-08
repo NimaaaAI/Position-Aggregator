@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Positions</title>
+<style>
+:root{
+  --paper:#faf6ef; --paper-2:#f3ede2;
+  --ink:#1b1713; --ink-2:#4a423a; --ink-3:#8a7f72;
+  --rule:#e0d7c8; --rule-2:#eee7db;
+  --accent:#b4541e; --accent-2:#8f4116; --accent-soft:#f7e9dd;
+  --ok:#3f6212; --ok-soft:#eef3e2; --red:#9b2c2c; --red-soft:#f8e6e4;
+  --gold:#8a6d1f; --gold-soft:#f7efd8;
+  --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#16120e; --paper-2:#1d1813;
+    --ink:#f0e8dc; --ink-2:#c2b6a5; --ink-3:#8b7f6f;
+    --rule:#332a21; --rule-2:#261f18;
+    --accent:#e08a4f; --accent-2:#f0a26b; --accent-soft:#2c1f14;
+    --ok:#a3c162; --ok-soft:#1b2211; --red:#e08a82; --red-soft:#2a1614;
+    --gold:#d5b45c; --gold-soft:#251f10;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans);
+  -webkit-font-smoothing:antialiased}
+a{color:inherit}
+.label{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600}
+
+.masthead{border-bottom:2px solid var(--ink)}
+.mast-in{max-width:78rem;margin:0 auto;padding:1.4rem 1.6rem .9rem;
+  display:flex;align-items:flex-end;gap:1rem;flex-wrap:wrap}
+.wordmark{font-family:var(--serif);font-size:1.9rem;line-height:1;font-weight:700;
+  letter-spacing:-.02em;margin:0}
+.wordmark em{font-style:italic;color:var(--accent);font-weight:400}
+.mast-in nav{margin-left:auto;display:flex;gap:1.4rem;align-items:baseline}
+.mast-in nav a{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;
+  font-weight:650;text-decoration:none;color:var(--ink-3);
+  border-bottom:1px solid transparent;padding-bottom:2px}
+.mast-in nav a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.mast-in nav a.here{color:var(--ink);border-bottom-color:var(--ink)}
+
+main{max-width:78rem;margin:0 auto;padding:2rem 1.6rem 5rem}
+section{margin-bottom:3rem}
+h2{font-family:var(--serif);font-size:1.35rem;font-weight:700;margin:0 0 .2rem;
+  letter-spacing:-.01em}
+.sub{font-family:var(--serif);font-style:italic;color:var(--ink-3);font-size:.92rem;
+  margin:0 0 1rem;padding-bottom:.6rem;border-bottom:1px solid var(--ink)}
+
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th{text-align:left;font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:650;padding:.45rem .6rem .45rem 0;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:.6rem .6rem .6rem 0;border-bottom:1px solid var(--rule-2);
+  vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;text-align:right;padding-right:1.2rem}
+th.num{text-align:right;padding-right:1.2rem}
+.who{font-family:var(--serif);font-size:1rem;font-weight:700}
+.mail{color:var(--ink-3);font-size:.78rem}
+.when{color:var(--ink-3);font-size:.78rem;white-space:nowrap}
+.q{font-family:var(--serif);font-style:italic;color:var(--ink-2)}
+.scroll{overflow-x:auto}
+
+.pill{display:inline-block;font-size:.64rem;letter-spacing:.11em;
+  text-transform:uppercase;font-weight:700;padding:.12rem .45rem;border-radius:2px}
+.pill.pending{background:var(--gold-soft);color:var(--gold)}
+.pill.active{background:var(--ok-soft);color:var(--ok)}
+.pill.off{background:var(--red-soft);color:var(--red)}
+.pill.admin{background:var(--accent-soft);color:var(--accent)}
+
+.act{font:inherit;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;
+  font-weight:650;cursor:pointer;background:transparent;color:var(--ink-2);
+  border:1px solid var(--rule);padding:.24rem .55rem;border-radius:2px;
+  margin-right:.3rem;transition:.15s}
+.act:hover{border-color:var(--ink);color:var(--ink)}
+.act.go{border-color:var(--ok);color:var(--ok)}
+.act.go:hover{background:var(--ok);color:var(--paper)}
+.act.no{border-color:var(--red);color:var(--red)}
+.act.no:hover{background:var(--red);color:var(--paper)}
+.cap{width:3.2rem;font:inherit;font-size:.82rem;text-align:right;color:var(--ink);
+  background:transparent;border:0;border-bottom:1px dotted var(--rule);
+  font-variant-numeric:tabular-nums;outline:none}
+.cap:focus{border-bottom-color:var(--accent)}
+
+.empty{color:var(--ink-3);font-family:var(--serif);font-style:italic;padding:1.2rem 0}
+.err{border-left:2px solid var(--red);background:var(--red-soft);color:var(--red);
+  padding:.6rem .85rem;font-size:.85rem;margin-bottom:1rem}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="mast-in">
+    <h1 class="wordmark">Positions<em>.</em></h1>
+    <nav>
+      <a href="/">Search</a>
+      <a href="/admin" class="here">Admin</a>
+      <a href="#" id="out">Sign out</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div id="error"></div>
+
+  <section>
+    <h2>People</h2>
+    <p class="sub">Anyone may request an account. Nobody may use one until you
+      approve it here.</p>
+    <div class="scroll"><table id="users"></table></div>
+  </section>
+
+  <section>
+    <h2>Signed in now</h2>
+    <p class="sub">Live sessions. Signing someone out takes effect on their next
+      click.</p>
+    <div class="scroll"><table id="sessions"></table></div>
+  </section>
+
+  <section>
+    <h2>Recent activity</h2>
+    <p class="sub">The last 60 questions. <b>Ask</b> spends API credit;
+      <b>search</b> costs nothing.</p>
+    <div class="scroll"><table id="activity"></table></div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? '').replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const when = iso => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {day:'2-digit', month:'short'})
+       + ' ' + d.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+};
+
+function state(u) {
+  if (!u.active) return '<span class="pill pending">pending</span>';
+  if (u.is_admin) return '<span class="pill admin">admin</span>';
+  return '<span class="pill active">active</span>';
+}
+
+async function act(username, action, value) {
+  const response = await fetch('/api/admin/user', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username, action, value: value ?? null}),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    $('#error').innerHTML = `<div class="err">${esc(data.error)}</div>`;
+    return;
+  }
+  $('#error').innerHTML = '';
+  load();
+}
+
+function draw(data) {
+  $('#users').innerHTML = `
+    <tr><th>Who</th><th>State</th><th class="num">Asks today</th>
+        <th class="num">Limit</th><th class="num">Asks total</th>
+        <th class="num">Tokens</th><th>Last seen</th><th></th></tr>` +
+    data.users.map(u => `
+      <tr>
+        <td><span class="who">${esc(u.username)}</span>
+            ${u.email ? `<div class="mail">${esc(u.email)}</div>` : ''}</td>
+        <td>${state(u)}</td>
+        <td class="num">${u.asks_today}</td>
+        <td class="num"><input class="cap" type="number" min="0" value="${u.limit}"
+            data-user="${esc(u.username)}"></td>
+        <td class="num">${u.asks}</td>
+        <td class="num">${u.tokens.toLocaleString()}</td>
+        <td class="when">${when(u.last_login)}</td>
+        <td style="white-space:nowrap">
+          ${!u.active ? `<button class="act go" data-do="approve"
+             data-user="${esc(u.username)}">Approve</button>` :
+            `<button class="act" data-do="disable"
+             data-user="${esc(u.username)}">Disable</button>`}
+          <button class="act" data-do="signout" data-user="${esc(u.username)}">Sign out</button>
+          <button class="act no" data-do="remove" data-user="${esc(u.username)}">Remove</button>
+        </td>
+      </tr>`).join('');
+
+  $('#sessions').innerHTML = data.sessions.length ? `
+    <tr><th>Who</th><th>Since</th><th>Last seen</th><th>From</th><th>Browser</th></tr>` +
+    data.sessions.map(s => `
+      <tr><td><span class="who">${esc(s.username)}</span></td>
+          <td class="when">${when(s.created_at)}</td>
+          <td class="when">${when(s.last_seen)}</td>
+          <td class="when">${esc(s.ip || '—')}</td>
+          <td class="when">${esc(s.agent || '—')}</td></tr>`).join('')
+    : '<tr><td class="empty">Nobody is signed in.</td></tr>';
+
+  $('#activity').innerHTML = data.activity.length ? `
+    <tr><th>When</th><th>Who</th><th>Kind</th><th>Question</th>
+        <th class="num">Results</th><th class="num">Tokens</th><th class="num">ms</th></tr>` +
+    data.activity.map(a => `
+      <tr><td class="when">${when(a.at)}</td>
+          <td>${esc(a.username)}</td>
+          <td>${a.endpoint === 'ask'
+                ? '<span class="pill admin">ask</span>'
+                : '<span class="pill active">search</span>'}</td>
+          <td class="q">${esc(a.question || '')}</td>
+          <td class="num">${a.results ?? '—'}</td>
+          <td class="num">${a.tokens ? a.tokens.toLocaleString() : '—'}</td>
+          <td class="num">${a.ms ?? '—'}</td></tr>`).join('')
+    : '<tr><td class="empty">Nothing yet.</td></tr>';
+}
+
+// One handler for the whole page rather than one per button, so redrawing the
+// tables cannot leave dead listeners behind.
+document.addEventListener('click', event => {
+  const button = event.target.closest('button[data-do]');
+  if (!button) return;
+  const what = button.dataset.do, who = button.dataset.user;
+  if (what === 'remove' &&
+      !confirm(`Remove ${who}? Their account and history go with them.`)) return;
+  act(who, what);
+});
+
+document.addEventListener('change', event => {
+  const box = event.target.closest('.cap');
+  if (box) act(box.dataset.user, 'limit', +box.value);
+});
+
+$('#out').onclick = async event => {
+  event.preventDefault();
+  await fetch('/api/logout', {method: 'POST'});
+  location.href = '/login';
+};
+
+async function load() {
+  const response = await fetch('/api/admin/overview');
+  if (!response.ok) { location.href = '/'; return; }
+  draw(await response.json());
+}
+load();
+</script>
+</body>
+</html>

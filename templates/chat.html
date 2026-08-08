@@ -44,6 +44,14 @@ a{color:inherit}
 .wordmark em{font-style:italic;color:var(--accent);font-weight:400}
 .masthead .dbstat{margin-left:auto;display:flex;gap:1.4rem;flex-wrap:wrap;
   padding-bottom:.2rem}
+.whoami{display:flex;gap:1.1rem;align-items:baseline;padding-bottom:.2rem;
+  border-left:1px solid var(--rule);padding-left:1.4rem}
+.whoami a,.whoami span{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;
+  font-weight:650;text-decoration:none;color:var(--ink-3);
+  border-bottom:1px solid transparent;padding-bottom:2px}
+.whoami a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.whoami .name{color:var(--ink)}
+@media (max-width:52rem){.whoami{border-left:0;padding-left:0}}
 .stat{font-size:.74rem;color:var(--ink-3);letter-spacing:.04em}
 .stat b{display:block;font-family:var(--serif);font-size:1.15rem;color:var(--ink);
   font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:0}
@@ -179,6 +187,7 @@ main{max-width:80rem;margin:0 auto;padding:2rem 1.6rem 5rem;display:grid;
   <div class="mast-in">
     <h1 class="wordmark">Positions<em>.</em></h1>
     <div class="dbstat" id="dbstat"></div>
+    <nav class="whoami" id="whoami"></nav>
   </div>
 </header>
 
@@ -418,6 +427,22 @@ fetch('/api/models').then(r => r.json()).then(data => {
       `<option value="${esc(m)}" ${m === data.default ? 'selected' : ''}>${esc(m)}${
         data.cheap.includes(m) ? ' (cheap)' : ''}</option>`).join('') + '</optgroup>'
   ).join('');
+});
+
+fetch('/api/me').then(r => r.json()).then(me => {
+  if (me.error) return;
+  $('#whoami').innerHTML = [
+    `<span class="name">${esc(me.username)}</span>`,
+    `<span title="Written answers used today, of your daily allowance">${
+      me.asked_today}/${me.daily_ask_limit} asks</span>`,
+    me.is_admin ? '<a href="/admin">Admin</a>' : '',
+    '<a href="#" id="signout">Sign out</a>',
+  ].filter(Boolean).join('');
+  $('#signout').onclick = async event => {
+    event.preventDefault();
+    await fetch('/api/logout', {method: 'POST'});
+    location.href = '/login';
+  };
 });
 
 fetch('/api/stats').then(r => r.json()).then(d => {

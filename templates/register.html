@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request access · Positions</title>
+<style>
+:root{
+  --paper:#faf6ef; --ink:#1b1713; --ink-2:#4a423a; --ink-3:#8a7f72;
+  --rule:#e0d7c8; --accent:#b4541e; --accent-2:#8f4116;
+  --red:#9b2c2c; --red-soft:#f8e6e4; --ok:#3f6212; --ok-soft:#eef3e2;
+  --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#16120e; --ink:#f0e8dc; --ink-2:#c2b6a5; --ink-3:#8b7f6f;
+    --rule:#332a21; --accent:#e08a4f; --accent-2:#f0a26b;
+    --red:#e08a82; --red-soft:#2a1614; --ok:#a3c162; --ok-soft:#1b2211;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+  font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased;
+  display:grid;place-items:center;padding:1.5rem}
+.sheet{width:100%;max-width:24rem}
+.wordmark{font-family:var(--serif);font-size:2.1rem;line-height:1;font-weight:700;
+  letter-spacing:-.02em;margin:0 0 .35rem}
+.wordmark em{font-style:italic;color:var(--accent);font-weight:400}
+.tagline{font-family:var(--serif);font-style:italic;color:var(--ink-3);
+  font-size:.98rem;margin:0 0 1.5rem;padding-bottom:1.3rem;
+  border-bottom:2px solid var(--ink)}
+.label{display:block;font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600;margin-bottom:.3rem}
+.row{margin-bottom:1.15rem}
+input{width:100%;border:0;border-bottom:1px solid var(--rule);background:transparent;
+  color:var(--ink);font-family:var(--serif);font-size:1.1rem;padding:.32rem 0;
+  outline:none;transition:border-color .18s}
+input:focus{border-bottom-color:var(--accent)}
+input.bad{border-bottom-color:var(--red)}
+button{width:100%;font-family:var(--sans);font-size:.76rem;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:650;cursor:pointer;
+  background:var(--accent);border:1px solid var(--accent);color:#fff;
+  padding:.72rem 1rem;border-radius:2px;transition:.16s;margin-top:.5rem}
+button:hover{background:var(--accent-2);border-color:var(--accent-2)}
+button:disabled{opacity:.45;cursor:wait}
+.note{border-left:2px solid var(--accent);padding:.55rem .85rem;font-size:.83rem;
+  color:var(--ink-2);margin-bottom:1.4rem;background:transparent}
+.err{border-left:2px solid var(--red);background:var(--red-soft);color:var(--red);
+  padding:.6rem .85rem;font-size:.85rem;margin-bottom:1.2rem}
+.done{border-left:2px solid var(--ok);background:var(--ok-soft);color:var(--ok);
+  padding:.9rem 1rem;font-size:.9rem}
+.foot{margin-top:1.7rem;padding-top:1rem;border-top:1px solid var(--rule);
+  font-size:.82rem;color:var(--ink-3);font-family:var(--serif);font-style:italic}
+.foot a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="sheet">
+  <h1 class="wordmark">Positions<em>.</em></h1>
+  <p class="tagline">Request an account.</p>
+
+  <div id="out"></div>
+
+  <div id="wrap">
+    <div class="note">Choose your own username and password. An administrator
+      approves each request by hand before it works.</div>
+
+    <form id="form" autocomplete="on">
+      <div class="row">
+        <label class="label" for="u">Username</label>
+        <input id="u" autocomplete="username" required
+               placeholder="letters, digits, - and _">
+      </div>
+      <div class="row">
+        <label class="label" for="e">Email</label>
+        <input id="e" type="email" autocomplete="email" required>
+      </div>
+      <div class="row">
+        <label class="label" for="e2">Repeat email</label>
+        <input id="e2" type="email" required>
+      </div>
+      <div class="row">
+        <label class="label" for="p">Password</label>
+        <input id="p" type="password" autocomplete="new-password" required
+               placeholder="at least 8 characters">
+      </div>
+      <div class="row">
+        <label class="label" for="p2">Repeat password</label>
+        <input id="p2" type="password" autocomplete="new-password" required>
+      </div>
+      <button id="go" type="submit">Request access</button>
+    </form>
+
+    <p class="foot">Already approved? <a href="/login">Sign in</a>.</p>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? '').replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function fail(message, field) {
+  $('#out').innerHTML = `<div class="err">${esc(message)}</div>`;
+  for (const id of ['#u', '#e', '#e2', '#p', '#p2']) $(id).classList.remove('bad');
+  if (field) { $(field).classList.add('bad'); $(field).focus(); }
+}
+
+$('#form').onsubmit = async event => {
+  event.preventDefault();
+
+  // Checked here as well as on the server. This half is only a courtesy -- it
+  // saves a round trip; the server never trusts it.
+  if ($('#e').value.trim() !== $('#e2').value.trim())
+    return fail('The two email addresses do not match.', '#e2');
+  if ($('#p').value !== $('#p2').value)
+    return fail('The two passwords do not match.', '#p2');
+
+  $('#go').disabled = true;
+  $('#out').innerHTML = '';
+
+  try {
+    const response = await fetch('/api/register', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: $('#u').value.trim(),
+        email: $('#e').value.trim(),
+        password: $('#p').value,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok) return fail(data.error || 'Something went wrong.');
+
+    $('#wrap').innerHTML = '';
+    $('#out').innerHTML = `<div class="done"><b>Request received.</b><br>
+      Your account exists but is not active yet. An administrator has to approve
+      it — you will be able to sign in once they do.</div>`;
+  } catch (error) {
+    fail(error.message);
+  } finally {
+    $('#go').disabled = false;
+  }
+};
+</script>
+</body>
+</html>

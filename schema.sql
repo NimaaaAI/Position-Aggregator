@@ -195,7 +195,38 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_username_idx ON sessions (username);
 CREATE INDEX IF NOT EXISTS sessions_expiry_idx   ON sessions (expires_at);
 
+-- Anyone may fill in the registration form; nobody may use the result until an
+-- administrator sets active. So `active` is the pending flag as well as the
+-- off switch, and an unapproved account is a queue entry rather than a way in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email text;
+
+-- What one person may spend of the owner's API credit in a day. Only the written
+-- answer costs anything, so only that is counted; searching is free and unlimited.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_ask_limit integer NOT NULL DEFAULT 50;
+
+-- One row per question asked, which is what the admin page reports.
+--
+-- The question text is kept: without it the page can say how much someone spent
+-- but not what they were doing, which is the thing worth knowing when a bill or a
+-- pattern looks wrong.
+CREATE TABLE IF NOT EXISTS activity (
+    id                bigserial PRIMARY KEY,
+    username          text NOT NULL REFERENCES users (username) ON DELETE CASCADE,
+    at                timestamptz NOT NULL DEFAULT now(),
+    endpoint          text NOT NULL,      -- 'search' costs nothing, 'ask' calls a model
+    question          text,
+    results           integer,
+    model             text,
+    prompt_tokens     integer,
+    completion_tokens integer,
+    ms                integer
+);
+
+CREATE INDEX IF NOT EXISTS activity_who_idx ON activity (username, at DESC);
+CREATE INDEX IF NOT EXISTS activity_at_idx  ON activity (at DESC);
+
 ALTER TABLE positions OWNER TO positions;
 ALTER TABLE position_chunks OWNER TO positions;
 ALTER TABLE users OWNER TO positions;
 ALTER TABLE sessions OWNER TO positions;
+ALTER TABLE activity OWNER TO positions;

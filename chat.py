@@ -34,6 +34,8 @@ import search
 ROOT = Path(__file__).parent
 PAGE = ROOT / "templates" / "chat.html"
 LOGIN_PAGE = ROOT / "templates" / "login.html"
+REGISTER_PAGE = ROOT / "templates" / "register.html"
+ADMIN_PAGE = ROOT / "templates" / "admin.html"
 
 COOKIE = "session"
 SESSION_DAYS = 14
@@ -72,6 +74,29 @@ def signed_in(request):
     return {"username": row[0], "is_admin": row[1]} if row else None
 
 
+def asked_today(conn, username):
+    """How many written answers this person has already had today."""
+    return conn.execute(
+        "SELECT count(*) FROM activity"
+        " WHERE username = %s AND endpoint = 'ask' AND at >= date_trunc('day', now())",
+        (username,),
+    ).fetchone()[0]
+
+
+def log(username, endpoint, question, results, ms, model=None, usage=None):
+    """Record one question. Written after the work, so a request that failed
+    halfway does not count against anyone's daily allowance."""
+    with psycopg.connect(search.DSN) as conn:
+        conn.execute(
+            "INSERT INTO activity (username, endpoint, question, results, model,"
+            "                      prompt_tokens, completion_tokens, ms)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (username, endpoint, question[:500], results, model,
+             usage.prompt_tokens if usage else None,
+             usage.completion_tokens if usage else None, ms),
+        )
+
+
 def add_user(username, is_admin):
     """Create a sign-in. Called from the command line, never over the web: there is
     no way to register, only to be given an account."""
@@ -84,11 +109,12 @@ def add_user(username, is_admin):
     salt = secrets.token_bytes(16)
     with psycopg.connect(search.DSN) as conn:
         conn.execute(
-            "INSERT INTO users (username, password_hash, salt, is_admin)"
-            " VALUES (%s, %s, %s, %s)"
+            "INSERT INTO users (username, password_hash, salt, is_admin, active)"
+            " VALUES (%s, %s, %s, %s, true)"
             " ON CONFLICT (username) DO UPDATE"
             "   SET password_hash = EXCLUDED.password_hash,"
-            "       salt = EXCLUDED.salt, is_admin = EXCLUDED.is_admin",
+            "       salt = EXCLUDED.salt, is_admin = EXCLUDED.is_admin,"
+            "       active = true",
             (username, hashed(password, salt), salt, is_admin),
         )
     print(f"{username} can now sign in{' as an admin' if is_admin else ''}")
@@ -197,6 +223,49 @@ def api_login(body: Credentials, request: Request):
     return response
 
 
+class Registration(BaseModel):
+    username: str
+    password: str
+    email: str
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page():
+    return HTMLResponse(REGISTER_PAGE.read_text(encoding="utf-8"))
+
+
+@app.post("/api/register")
+def api_register(body: Registration):
+    """Anyone may apply. Nobody may use the result until an admin approves it, so
+    this creates a queue entry rather than an account."""
+    name = body.username.strip().lower()
+    email = body.email.strip()
+
+    if not (3 <= len(name) <= 32) or not name.replace("_", "").replace("-", "").isalnum():
+        return JSONResponse(
+            {"error": "Username: 3-32 characters, letters, digits, - and _ only."},
+            status_code=400)
+    if len(body.password) < 8:
+        return JSONResponse({"error": "Password must be at least 8 characters."},
+                            status_code=400)
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"error": "That email address does not look right."},
+                            status_code=400)
+
+    salt = secrets.token_bytes(16)
+    with psycopg.connect(search.DSN) as conn:
+        taken = conn.execute("SELECT 1 FROM users WHERE username = %s", (name,)).fetchone()
+        if taken:
+            return JSONResponse({"error": "That username is already taken."},
+                                status_code=409)
+        conn.execute(
+            "INSERT INTO users (username, password_hash, salt, email, active)"
+            " VALUES (%s, %s, %s, %s, false)",
+            (name, hashed(body.password, salt), salt, email),
+        )
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/logout")
 def api_logout(request: Request):
     token = request.cookies.get(COOKIE)
@@ -213,14 +282,124 @@ def api_me(request: Request):
     user = signed_in(request)
     if not user:
         return JSONResponse({"error": "not signed in"}, status_code=401)
-    return JSONResponse(user)
+    with psycopg.connect(search.DSN) as conn:
+        limit, = conn.execute("SELECT daily_ask_limit FROM users WHERE username = %s",
+                              (user["username"],)).fetchone()
+        used = asked_today(conn, user["username"])
+    return JSONResponse({**user, "asked_today": used, "daily_ask_limit": limit})
+
+
+# ---- the admin page -------------------------------------------------------
+
+
+class AdminAction(BaseModel):
+    username: str
+    action: str          # approve | disable | remove | signout | limit
+    value: int | None = None
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    user = signed_in(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if not user["is_admin"]:
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(ADMIN_PAGE.read_text(encoding="utf-8"))
+
+
+@app.get("/api/admin/overview")
+def api_admin_overview(request: Request):
+    user = signed_in(request)
+    if not user or not user["is_admin"]:
+        return JSONResponse({"error": "not an administrator"}, status_code=403)
+
+    with psycopg.connect(search.DSN) as conn:
+        people = conn.execute(
+            "SELECT u.username, u.email, u.is_admin, u.active, u.created_at,"
+            "       u.last_login, u.daily_ask_limit,"
+            "       (SELECT count(*) FROM activity a"
+            "         WHERE a.username = u.username AND a.endpoint = 'ask') AS asks,"
+            "       (SELECT count(*) FROM activity a"
+            "         WHERE a.username = u.username AND a.endpoint = 'ask'"
+            "           AND a.at >= date_trunc('day', now())) AS asks_today,"
+            "       (SELECT coalesce(sum(prompt_tokens + completion_tokens), 0)"
+            "          FROM activity a WHERE a.username = u.username) AS tokens"
+            "  FROM users u ORDER BY u.active, u.created_at DESC"
+        ).fetchall()
+
+        live = conn.execute(
+            "SELECT username, created_at, last_seen, ip, left(user_agent, 60)"
+            "  FROM sessions WHERE expires_at > now() ORDER BY last_seen DESC"
+        ).fetchall()
+
+        recent = conn.execute(
+            "SELECT username, at, endpoint, question, results,"
+            "       coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0), ms"
+            "  FROM activity ORDER BY at DESC LIMIT 60"
+        ).fetchall()
+
+    def when(value):
+        return value.isoformat() if value else None
+
+    return JSONResponse({
+        "users": [{
+            "username": r[0], "email": r[1], "is_admin": r[2], "active": r[3],
+            "created_at": when(r[4]), "last_login": when(r[5]), "limit": r[6],
+            "asks": r[7], "asks_today": r[8], "tokens": r[9],
+        } for r in people],
+        "sessions": [{
+            "username": r[0], "created_at": when(r[1]), "last_seen": when(r[2]),
+            "ip": r[3], "agent": r[4],
+        } for r in live],
+        "activity": [{
+            "username": r[0], "at": when(r[1]), "endpoint": r[2], "question": r[3],
+            "results": r[4], "tokens": r[5], "ms": r[6],
+        } for r in recent],
+    })
+
+
+@app.post("/api/admin/user")
+def api_admin_user(body: AdminAction, request: Request):
+    user = signed_in(request)
+    if not user or not user["is_admin"]:
+        return JSONResponse({"error": "not an administrator"}, status_code=403)
+
+    # An admin locking themselves out is a support call to nobody, since there is
+    # no support. Everything else is fair game.
+    if body.username == user["username"] and body.action in ("disable", "remove"):
+        return JSONResponse({"error": "You cannot disable or remove yourself."},
+                            status_code=400)
+
+    with psycopg.connect(search.DSN) as conn:
+        if body.action == "approve":
+            conn.execute("UPDATE users SET active = true WHERE username = %s",
+                         (body.username,))
+        elif body.action == "disable":
+            # Sessions go too, or a disabled account keeps working until its
+            # cookie happens to expire.
+            conn.execute("UPDATE users SET active = false WHERE username = %s",
+                         (body.username,))
+            conn.execute("DELETE FROM sessions WHERE username = %s", (body.username,))
+        elif body.action == "remove":
+            conn.execute("DELETE FROM users WHERE username = %s", (body.username,))
+        elif body.action == "signout":
+            conn.execute("DELETE FROM sessions WHERE username = %s", (body.username,))
+        elif body.action == "limit":
+            conn.execute("UPDATE users SET daily_ask_limit = %s WHERE username = %s",
+                         (max(0, int(body.value or 0)), body.username))
+        else:
+            return JSONResponse({"error": "unknown action"}, status_code=400)
+
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/search")
 def api_search(body: Question, request: Request):
     """Retrieval only. No model, no API key, no cost -- this is the endpoint for
     watching the search work on its own."""
-    if not signed_in(request):
+    user = signed_in(request)
+    if not user:
         return JSONResponse({"error": "Signed out. Reload the page."}, status_code=401)
 
     started = time.perf_counter()
@@ -230,18 +409,32 @@ def api_search(body: Question, request: Request):
         hybrid=body.hybrid, position_type=body.position_type or None,
         dedupe=body.dedupe,
     )
-    elapsed = time.perf_counter() - started
+    elapsed = round((time.perf_counter() - started) * 1000)
+    log(user["username"], "search", body.question, len(results), elapsed)
 
     return JSONResponse({
         "positions": [as_json(item) for item in results],
-        "timings": {"retrieval_ms": round(elapsed * 1000)},
+        "timings": {"retrieval_ms": elapsed},
     })
 
 
 @app.post("/api/chat")
 def api_chat(body: Question, request: Request):
-    if not signed_in(request):
+    user = signed_in(request)
+    if not user:
         return JSONResponse({"error": "Signed out. Reload the page."}, status_code=401)
+
+    # Only the written answer spends the owner's API credit, so only this endpoint
+    # is capped. Searching is free and stays unlimited.
+    with psycopg.connect(search.DSN) as conn:
+        limit, = conn.execute("SELECT daily_ask_limit FROM users WHERE username = %s",
+                              (user["username"],)).fetchone()
+        used = asked_today(conn, user["username"])
+    if used >= limit:
+        return JSONResponse(
+            {"error": f"You have used your {limit} answers for today. "
+                      f"Searching still works and costs nothing."},
+            status_code=429)
 
     started = time.perf_counter()
     results = search.retrieve(
@@ -281,6 +474,9 @@ def api_chat(body: Question, request: Request):
     # them; this reports whether it did.
     mentioned = {int(n) for n in ask.CITED.findall(text)}
     missing = [n for n in range(1, len(given) + 1) if n not in mentioned]
+
+    log(user["username"], "ask", body.question, len(results),
+        retrieval_ms + answer_ms, model=body.model, usage=usage)
 
     return JSONResponse({
         "answer": text,

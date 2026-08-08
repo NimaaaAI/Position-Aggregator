@@ -171,8 +171,8 @@ python ask.py --models
 python chat.py            # → http://127.0.0.1:8000
 ```
 
-Asks you to sign in first. `--add-user <name>` creates an account or resets a
-password; `--admin` marks someone as an administrator.
+Asks you to sign in first. `/register` requests an account, `/admin` approves them.
+`--add-user <name> --admin` makes the first administrator from the command line.
 
 Answer on the left, every retrieved position with its scores on the right — each with
 its opening line, which board it came from, and how long is left to apply.
@@ -197,32 +197,50 @@ The type dropdown, **open only** and **merge copies** are the same as `--type`,
 
 ## 🔐 Access
 
-Nobody reaches the search page without an account, and accounts are only ever made
-from the command line. **There is no registration** — one fewer thing to defend.
+```
+/register   choose a username, email and password   →  pending
+/admin      an administrator approves               →  active
+/login      sign in                                 →  the search page
+```
+
+Anyone may fill in the form; **nobody may use the result until an administrator
+approves it**. An unapproved account is a queue entry, not a way in. The first
+administrator is made from the command line, because there is nobody to approve them:
 
 ```bash
-python chat.py --add-user colleague          # prompts twice, echoes nothing
-python chat.py --add-user colleague          # run again to reset that password
+python chat.py --add-user nima --admin       # prompts twice, echoes nothing
 ```
 
-**Passwords** are stored as `scrypt(password, per-user salt)` using `hashlib` from the
-standard library. The password itself is never written down, and two people who
-choose the same one still store different bytes.
+**Passwords** are `scrypt(password, per-user salt)` from `hashlib` — standard library,
+no dependency. The password itself is never stored, and two people who choose the same
+one still store different bytes.
 
 **Sessions** are a random token in an `HttpOnly` cookie; everything real about the
-session lives in the `sessions` table. Deleting a row signs that browser out on its
-next request, with nothing to do at the browser's end.
+session lives in the `sessions` table, so deleting a row signs that browser out on its
+next request. That also means restarting the server signs nobody out.
 
-**Every endpoint checks**, not only the page — a redirect on `/` would be pointless
-if `/api/search` still answered anyone who asked.
+**Every endpoint checks** — a redirect on `/` would be pointless if `/api/search` still
+answered anyone who asked.
 
-```sql
--- who has signed in, and from where
-SELECT username, created_at, last_seen, ip FROM sessions ORDER BY last_seen DESC;
+### The admin page
 
--- sign someone out now
-DELETE FROM sessions WHERE username = 'colleague';
-```
+`/admin`, for administrators only.
+
+| | |
+|---|---|
+| **People** | state, asks today, editable daily limit, lifetime asks and tokens |
+| **Signed in now** | live sessions with IP and browser |
+| **Recent activity** | the last 60 questions — who, what, results, tokens, time |
+
+Approve · Disable · Sign out · Remove. **Disabling deletes that person's sessions**,
+or a disabled account keeps working until its cookie happens to expire. You cannot
+disable or remove yourself.
+
+### The daily limit
+
+Only the written answer costs anything, so only `Ask` is capped — **50 a day per
+person** by default, editable per user in the panel. Searching is free and stays
+unlimited, so hitting the limit degrades the service rather than stopping it.
 
 Bound to `127.0.0.1`, so it is reachable from this machine only.
 
@@ -300,7 +318,10 @@ Two things are stored as each board writes them rather than normalised:
 |---|---|---|
 | `username` | `text` | **primary key** |
 | `password_hash`, `salt` | `bytea` | `scrypt`, never the password |
-| `is_admin`, `active` | `boolean` | |
+| `email` | `text` | given at registration |
+| `is_admin` | `boolean` | may reach `/admin` |
+| `active` | `boolean` | **false until approved** — the pending flag and the off switch |
+| `daily_ask_limit` | `integer` | written answers per day. Default 50 |
 | `created_at`, `last_login` | `timestamptz` | |
 
 | `sessions` | | |
@@ -309,6 +330,19 @@ Two things are stored as each board writes them rather than normalised:
 | `username` | `text` | FK → `users` `ON DELETE CASCADE` |
 | `expires_at`, `created_at`, `last_seen` | `timestamptz` | |
 | `ip`, `user_agent` | `text` | where the sign-in came from |
+
+### `activity` — one row per question
+
+| Column | Type | |
+|---|---|---|
+| `username` | `text` | FK → `users` `ON DELETE CASCADE` |
+| `at` | `timestamptz` | |
+| `endpoint` | `text` | `search` costs nothing, `ask` calls a model |
+| `question` | `text` | kept, so the panel can show what someone was doing |
+| `results`, `ms` | `integer` | |
+| `model`, `prompt_tokens`, `completion_tokens` | | `ask` only |
+
+This is what the daily limit counts and what the admin page reports.
 
 ### `stopwords` — recomputed every update
 
@@ -359,7 +393,7 @@ SELECT word, share FROM stopwords ORDER BY share DESC LIMIT 20;
 | `search.py` | Retrieval + reranking. Imported, not run alone |
 | `ask.py` | Written answer with citations |
 | `chat.py` | Web interface and sign-in. Also `--add-user` |
-| `templates/` | `chat.html` the search page · `login.html` the sign-in page |
+| `templates/` | `chat.html` search · `login.html` sign in · `register.html` request access · `admin.html` the panel |
 | `update.py` | Runs the six steps in order |
 | `sites.yml` | Which boards, and how to read them. The only place a site is named |
 | `schema.sql` | The tables. Re-runnable |
