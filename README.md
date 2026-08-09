@@ -242,7 +242,60 @@ Only the written answer costs anything, so only `Ask` is capped — **50 a day p
 person** by default, editable per user in the panel. Searching is free and stays
 unlimited, so hitting the limit degrades the service rather than stopping it.
 
-Bound to `127.0.0.1`, so it is reachable from this machine only.
+---
+
+## 🌍 Putting it online
+
+Two terminals. The first serves, the second exposes.
+
+```bash
+python chat.py                                  # 127.0.0.1:8000
+ssh -R 80:127.0.0.1:8000 nokey@localhost.run    # prints an https://….lhr.life URL
+```
+
+That is the whole thing — no port opened on the router, no public IP, no certificate
+to renew. The models stay on this machine; only HTTP crosses the tunnel.
+
+**Use `127.0.0.1`, not `localhost`**, in the `-R` argument. `localhost` can resolve to
+IPv6 `::1` first, and a server bound to `0.0.0.0` is IPv4 only — the tunnel then knocks
+on a door nobody is behind and reports `connect_to localhost port 8000: failed`.
+
+To reach it from another device on the same wifi instead, no tunnel is needed:
+
+```bash
+python chat.py --host 0.0.0.0        # then http://<this-mac's-LAN-IP>:8000
+```
+
+The free tunnel gives a new URL each time and dies with the terminal. A stable name
+needs an account and an SSH key.
+
+<details>
+<summary>Why not Cloudflare Tunnel</summary>
+
+It was the first choice, and it does not work from this connection. Two faults, in
+order:
+
+**Its DNS lookups go nowhere.** `cloudflared` is written in Go, and Go must use its own
+resolver for SRV records — `getaddrinfo` cannot return them. That resolver reads
+`/etc/resolv.conf`, which on macOS is a placeholder containing no nameserver, so every
+lookup goes to localhost and is refused. `GODEBUG=netdns=cgo` does not help, for the
+same reason. Appending `nameserver 8.8.4.4` to that file fixes it and changes nothing
+else — macOS itself does not read it — but the file is regenerated on every network
+change, so the fix does not survive a reboot.
+
+**Then port 7844 is blocked.** With DNS finally working, the pre-checks still failed:
+
+```
+DNS Resolution    PASS
+UDP Connectivity  FAIL   QUIC connection failed
+TCP Connectivity  FAIL   HTTP/2 connection is blocked or unreachable
+```
+
+Cloudflare Tunnel speaks only on 7844. `localhost.run` uses SSH on port 22 and `ngrok`
+uses 443 — ports that carry ordinary traffic and are therefore open almost everywhere.
+That is the whole reason they work here and Cloudflare does not.
+
+</details>
 
 ---
 
