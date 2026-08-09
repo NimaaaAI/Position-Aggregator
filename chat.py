@@ -23,6 +23,7 @@ from pathlib import Path
 from threading import Timer
 
 import psycopg
+import pycountry
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -134,6 +135,8 @@ class Question(BaseModel):
     dedupe: bool = True
     # "phd", "postdoc", ... or None for any. Applied before ranking.
     position_type: str | None = None
+    # An ISO country code, or None for anywhere. Also applied before ranking.
+    country: str | None = None
 
 
 def as_json(item):
@@ -407,7 +410,7 @@ def api_search(body: Question, request: Request):
         body.question, limit=body.show,
         open_only=body.open_only, rerank=body.rerank,
         hybrid=body.hybrid, position_type=body.position_type or None,
-        dedupe=body.dedupe,
+        dedupe=body.dedupe, country=body.country or None,
     )
     elapsed = round((time.perf_counter() - started) * 1000)
     log(user["username"], "search", body.question, len(results), elapsed)
@@ -441,7 +444,7 @@ def api_chat(body: Question, request: Request):
         body.question, limit=body.show,
         open_only=body.open_only, rerank=body.rerank,
         hybrid=body.hybrid, position_type=body.position_type or None,
-        dedupe=body.dedupe,
+        dedupe=body.dedupe, country=body.country or None,
     )
     retrieval_ms = round((time.perf_counter() - started) * 1000)
 
@@ -542,6 +545,33 @@ def api_stats(request: Request):
         "open": open_now, "newest": newest,
         "by_country": [{"country": c, "count": n} for c, n in top],
     })
+
+
+@app.get("/api/countries")
+def api_countries(request: Request):
+    """The countries worth offering in the filter, commonest first.
+
+    Counted on open positions only: a country whose every advert has closed is a
+    menu entry that can only ever return nothing.
+    """
+    if not signed_in(request):
+        return JSONResponse({"error": "not signed in"}, status_code=401)
+
+    with psycopg.connect(search.DSN) as conn:
+        rows = conn.execute(
+            "SELECT country_code, count(*) FROM positions"
+            " WHERE country_code IS NOT NULL"
+            "   AND (closes_at IS NULL OR closes_at > now())"
+            " GROUP BY country_code ORDER BY 2 DESC, 1"
+        ).fetchall()
+
+    def name(code):
+        found = pycountry.countries.get(alpha_2=code)
+        return getattr(found, "common_name", None) or (found.name if found else code)
+
+    return JSONResponse({"countries": [
+        {"code": code, "name": name(code), "count": count} for code, count in rows
+    ]})
 
 
 def main():

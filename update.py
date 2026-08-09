@@ -31,6 +31,7 @@ STEPS = [
     ("download", ["scrape.py", "--update"]),
     ("extract", ["extract.py", "--all"]),
     ("classify", ["extract.py", "--types"]),
+    ("countries", ["extract.py", "--countries"]),
     # Recounted each time, because which words are too common to search for is a
     # property of the corpus and the corpus keeps changing.
     ("stopwords", ["extract.py", "--stopwords"]),

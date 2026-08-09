@@ -79,6 +79,17 @@ ALTER TABLE positions
 
 CREATE INDEX IF NOT EXISTS positions_type_idx ON positions USING gin (position_type);
 
+-- The country as ISO 3166 alpha-2, worked out from whatever the board wrote.
+--
+-- `country` is kept exactly as published, because that is the honest record and it
+-- is what gets displayed. But the boards disagree: the Netherlands arrives as "NL",
+-- "The Netherlands" and "Netherlands" from three different sites, so filtering on
+-- the text would split one country into three and hide most of it behind whichever
+-- spelling was picked. The code is the thing to filter on.
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS country_code text;
+
+CREATE INDEX IF NOT EXISTS positions_country_code_idx ON positions (country_code);
+
 
 -- Full-text search, to sit alongside the vector search.
 --

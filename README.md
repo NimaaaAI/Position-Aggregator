@@ -144,9 +144,10 @@ python update.py
 | 1 | download what is new | `scrape.py --update` |
 | 2 | HTML → rows | `extract.py --all` |
 | 3 | classify phd / postdoc / professor | `extract.py --types` |
-| 4 | recount stopwords | `extract.py --stopwords` |
-| 5 | one vector per position | `embed.py --all` |
-| 6 | one vector per passage | `embed.py --chunks` |
+| 4 | each board's country spelling → ISO code | `extract.py --countries` |
+| 5 | recount stopwords | `extract.py --stopwords` |
+| 6 | one vector per position | `embed.py --all` |
+| 7 | one vector per passage | `embed.py --chunks` |
 
 Every step skips work already done. First run ≈ 1 hour, later runs ≈ 2 minutes.
 
@@ -186,6 +187,7 @@ The type dropdown, **open only** and **merge copies** are the same as `--type`,
 | Flag | Effect |
 |---|---|
 | `--type phd` | Only PhD posts. Also `postdoc`, `professor`, `lecturer`, `researcher` |
+| `--country IT` | Only that country, by ISO code. Applied before ranking |
 | `--open` | Hide positions whose deadline has passed |
 | `--rerank` | Re-score results with the cross-encoder |
 | `--limit N` | Results to retrieve. Default `60` |
@@ -299,6 +301,36 @@ That is the whole reason they work here and Cloudflare does not.
 
 ---
 
+## 🌐 One country, three spellings
+
+Filtering by country cannot use the country. The boards disagree:
+
+```
+NL                909      academictransfer
+The Netherlands   170      academicpositions
+Netherlands        71      euraxess
+```
+
+One country, three menu entries, and whichever you picked would hide the other two
+thirds of it. So `country_code` holds the ISO 3166 alpha-2 code and everything filters
+on that, while `country` keeps whatever the board actually published, for display.
+
+The mapping comes from **`pycountry`** — the ISO standard as a package — rather than a
+list kept in this repository. A hand-written list would cover the four boards we happen
+to have and fail silently on the fifth; this way `Deutschland`, `Suomi` and `Czech
+Republic` all land correctly without anyone editing anything.
+
+```bash
+python extract.py --countries      # prints every mapping it makes
+```
+
+It prints rather than working quietly because its last resort is a fuzzy match, and a
+fuzzy match can be wrong. Anything it cannot resolve is left `NULL` and reported, so it
+simply never appears in the filter — failing to offer a country is harmless, offering
+the wrong one is not.
+
+---
+
 ## 🔗 The same job on several boards
 
 Four boards overlap, so one job can occupy several of the ten slots the model sees.
@@ -343,6 +375,7 @@ Three tables. `psql -d positions`
 | `embed_text` | `text` | exactly what was embedded |
 | `embedding` | `vector(768)` | HNSW · `vector_cosine_ops` |
 | `position_type` | `text[]` | `{phd}`, `{phd,postdoc}` … GIN indexed |
+| `country_code` | `text` | ISO 3166 alpha-2, resolved from `country` |
 | `tsv` | `tsvector` | generated, `'simple'` config · GIN indexed |
 | `html_file`, `first_seen`, `last_seen` | | bookkeeping |
 | `closed_at`, `extracted_at`, `embedded_at` | `timestamptz` | |
@@ -350,7 +383,8 @@ Three tables. `psql -d positions`
 Two things are stored as each board writes them rather than normalised:
 
 - **`country`** is written three different ways for the Netherlands alone — `NL`,
-  `The Netherlands`, `Netherlands` — because each board writes it its own way.
+  `The Netherlands`, `Netherlands` — because each board writes it its own way. Kept
+  verbatim for display; `country_code` is what anything filters on.
 - **Many jobs appear on more than one board** — 363 of them, 753 rows. EURAXESS in
   particular re-lists adverts the national boards already carry. Every copy is kept,
   because they carry different deadlines and one often stays live after the other
@@ -447,7 +481,7 @@ SELECT word, share FROM stopwords ORDER BY share DESC LIMIT 20;
 | `ask.py` | Written answer with citations |
 | `chat.py` | Web interface and sign-in. Also `--add-user` |
 | `templates/` | `chat.html` search · `login.html` sign in · `register.html` request access · `admin.html` the panel |
-| `update.py` | Runs the six steps in order |
+| `update.py` | Runs the seven steps in order |
 | `sites.yml` | Which boards, and how to read them. The only place a site is named |
 | `schema.sql` | The tables. Re-runnable |
 

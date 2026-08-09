@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 import psycopg
+import pycountry
 import yaml
 from bs4 import BeautifulSoup
 
@@ -389,6 +390,81 @@ def classify_all(force=False):
             print(f"    {(title or '')[:74]}")
 
 
+def iso_country(name):
+    """Whatever a board wrote for the country -> an ISO 3166 alpha-2 code, or None.
+
+    The boards disagree with each other and with themselves: "NL", "Netherlands"
+    and "The Netherlands" are one country, "Czech Republic" is what everyone writes
+    and "Czechia" is what the standard calls it. pycountry is the standard as data,
+    which is why the mapping is not a list kept in this file -- a list would cover
+    the boards we happen to have and quietly fail on the next one.
+
+    Fuzzy matching is the last resort and can be wrong, so resolve_countries()
+    prints every mapping it makes for a human to disagree with.
+    """
+    if not name:
+        return None
+    text = " ".join(name.split())
+
+    if len(text) == 2 and text.isalpha():
+        found = pycountry.countries.get(alpha_2=text.upper())
+        return found.alpha_2 if found else None
+
+    for key in ("name", "common_name", "official_name"):
+        found = pycountry.countries.get(**{key: text})
+        if found:
+            return found.alpha_2
+
+    try:
+        return pycountry.countries.search_fuzzy(text)[0].alpha_2
+    except LookupError:
+        return None
+
+
+def country_name(code):
+    """The display name for a code, for the filter menu."""
+    found = pycountry.countries.get(alpha_2=code) if code else None
+    return getattr(found, "common_name", None) or (found.name if found else code)
+
+
+def resolve_countries(force=False):
+    """Fill country_code from country, one row per distinct spelling."""
+    with psycopg.connect(DSN) as conn:
+        where = "" if force else " AND country_code IS NULL"
+        spellings = conn.execute(
+            "SELECT country, count(*) FROM positions"
+            f" WHERE country IS NOT NULL{where}"
+            " GROUP BY country ORDER BY 2 DESC"
+        ).fetchall()
+
+        if not spellings:
+            print("nothing to do -- use --force to redo every row")
+            return
+
+        print(f"{len(spellings)} spelling(s) to resolve\n")
+        unknown = []
+        for spelling, rows in spellings:
+            code = iso_country(spelling)
+            if code:
+                conn.execute(
+                    "UPDATE positions SET country_code = %s WHERE country = %s",
+                    (code, spelling),
+                )
+                print(f"  {rows:>6,}  {spelling:<28} -> {code}  {country_name(code)}")
+            else:
+                unknown.append((spelling, rows))
+
+        if unknown:
+            print(f"\n  {len(unknown)} spelling(s) left as NULL:")
+            for spelling, rows in unknown:
+                print(f"    {rows:>6,}  {spelling!r}")
+
+        total, coded = conn.execute(
+            "SELECT count(*), count(country_code) FROM positions"
+        ).fetchone()
+        print(f"\n  {coded:,}/{total:,} position(s) now have a country code")
+
+
 def build_stopwords(share=0.25):
     """Count how many adverts contain each word, and record the common ones.
 
@@ -581,13 +657,20 @@ parser.add_argument("--stopwords", action="store_true",
                          "to be worth searching for")
 parser.add_argument("--stopword-share", type=float, default=0.25,
                     help="a word in at least this fraction of adverts is a stopword")
+parser.add_argument("--countries", action="store_true",
+                    help="turn each board's spelling of a country into an ISO code")
 parser.add_argument("--force", action="store_true",
-                    help="with --all or --types, redo work already done")
+                    help="with --all, --types or --countries, redo work already done")
 args = parser.parse_args()
 
 if not (args.one or args.all or args.check or args.types or args.check_types
-        or args.stopwords):
-    sys.exit("pick one: --one, --all, --types, --stopwords, --check or --check-types")
+        or args.stopwords or args.countries):
+    sys.exit("pick one: --one, --all, --types, --countries, --stopwords, "
+             "--check or --check-types")
+
+if args.countries:
+    resolve_countries(force=args.force)
+    sys.exit(0)
 
 if args.stopwords:
     build_stopwords(share=args.stopword_share)

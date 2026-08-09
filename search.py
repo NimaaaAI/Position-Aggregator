@@ -229,7 +229,8 @@ def collapse(results):
 
 
 def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
-             hybrid=True, position_type=None, chunked=True, dedupe=True):
+             hybrid=True, position_type=None, chunked=True, dedupe=True,
+             country=None):
     """Find the positions that best answer `question`.
 
     Returns `limit` dicts, best first. Two searches run: vector similarity, which
@@ -255,7 +256,12 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
     # from PhD positions only rather than filtered down to whichever happened to
     # survive a general ranking.
     type_clause = "AND %(type)s = ANY(position_type)" if position_type else ""
-    params = {"vector": vector, "wanted": wanted, "type": position_type}
+    # On the code, never on the text: three boards write the Netherlands three
+    # different ways, so matching the spelling would hide most of a country.
+    if country:
+        type_clause += " AND country_code = %(country)s"
+    params = {"vector": vector, "wanted": wanted, "type": position_type,
+              "country": country}
 
     found = {}
     vector_order, chunk_order, text_order = [], [], []
@@ -427,13 +433,16 @@ def main():
                         choices=["phd", "postdoc", "professor", "lecturer",
                                  "researcher", "engineer", "student", "support"],
                         help="only this kind of post. Applied before ranking")
+    parser.add_argument("--country", type=lambda code: code.upper(),
+                        help="ISO country code, e.g. NL, GB, IT. Applied before "
+                             "ranking, and matches however the board spelled it")
     args = parser.parse_args()
 
     results = retrieve(
         args.question, limit=args.limit, open_only=args.open_only,
         rerank=args.rerank, hybrid=not args.no_hybrid,
         position_type=args.position_type, chunked=not args.no_chunks,
-        dedupe=not args.no_dedupe,
+        dedupe=not args.no_dedupe, country=args.country,
     )
     if not results:
         sys.exit("nothing found")

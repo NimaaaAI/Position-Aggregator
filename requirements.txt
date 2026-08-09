@@ -8,3 +8,4 @@ python-dotenv==1.2.2
 ruff==0.16.1
 fastapi
 uvicorn
+pycountry==24.6.1

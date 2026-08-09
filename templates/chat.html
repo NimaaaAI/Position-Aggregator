@@ -245,6 +245,11 @@ main{max-width:80rem;margin:0 auto;padding:2rem 1.6rem 5rem;display:grid;
       <option value="engineer">Engineer only</option>
     </select>
   </div>
+  <div class="field" id="f-country">
+    <select id="country" title="Matched on an ISO country code, not on the spelling — the boards write the same country three different ways.">
+      <option value="">Anywhere</option>
+    </select>
+  </div>
   <div class="field" id="f-open">
     <input type="checkbox" id="openonly" checked><label for="openonly">Open only</label>
   </div>
@@ -311,6 +316,7 @@ function payload() {
     hybrid: $('#hybrid').checked,
     dedupe: $('#dedupe').checked,
     position_type: $('#ptype').value || null,
+    country: $('#country').value || null,
     rerank: true,
   };
 }
@@ -319,11 +325,13 @@ function payload() {
 // rather than silently changing every result.
 function paintFilters() {
   $('#f-type').classList.toggle('on', !!$('#ptype').value);
+  $('#f-country').classList.toggle('on', !!$('#country').value);
   $('#f-open').classList.toggle('on', $('#openonly').checked);
   $('#f-hybrid').classList.toggle('on', !$('#hybrid').checked);
   $('#f-dedupe').classList.toggle('on', !$('#dedupe').checked);
 }
-for (const id of ['#ptype', '#openonly', '#hybrid', '#dedupe']) $(id).onchange = paintFilters;
+for (const id of ['#ptype', '#country', '#openonly', '#hybrid', '#dedupe'])
+  $(id).onchange = paintFilters;
 paintFilters();
 
 // A missing score means that search did not return this position at all, which is
@@ -461,6 +469,14 @@ fetch('/api/models').then(r => r.json()).then(data => {
       `<option value="${esc(m)}" ${m === data.default ? 'selected' : ''}>${esc(m)}${
         data.cheap.includes(m) ? ' (cheap)' : ''}</option>`).join('') + '</optgroup>'
   ).join('');
+});
+
+// Only countries with something open in them: an entry that can never return a
+// result is worse than no entry.
+fetch('/api/countries').then(r => r.json()).then(data => {
+  if (data.error) return;
+  $('#country').insertAdjacentHTML('beforeend', data.countries.map(c =>
+    `<option value="${esc(c.code)}">${esc(c.name)} (${c.count})</option>`).join(''));
 });
 
 fetch('/api/me').then(r => r.json()).then(me => {
