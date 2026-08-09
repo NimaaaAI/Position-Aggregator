@@ -547,6 +547,39 @@ def api_stats(request: Request):
     })
 
 
+class Browse(BaseModel):
+    limit: int = 100
+    offset: int = 0
+    open_only: bool = True
+    dedupe: bool = True
+    position_type: str | None = None
+    country: str | None = None
+
+
+@app.post("/api/browse")
+def api_browse(body: Browse, request: Request):
+    """The filters with no question. Straight from the table, no models, no cost."""
+    user = signed_in(request)
+    if not user:
+        return JSONResponse({"error": "Signed out. Reload the page."}, status_code=401)
+
+    started = time.perf_counter()
+    results, total = search.browse(
+        limit=min(body.limit, 500), offset=max(0, body.offset),
+        open_only=body.open_only, position_type=body.position_type or None,
+        country=body.country or None, dedupe=body.dedupe,
+    )
+    elapsed = round((time.perf_counter() - started) * 1000)
+    log(user["username"], "browse", body.country or "any", total, elapsed)
+
+    return JSONResponse({
+        "positions": [as_json(item) for item in results],
+        "total": total,
+        "offset": body.offset,
+        "timings": {"retrieval_ms": elapsed},
+    })
+
+
 @app.get("/api/countries")
 def api_countries(request: Request):
     """The countries worth offering in the filter, commonest first.

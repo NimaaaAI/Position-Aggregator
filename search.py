@@ -191,6 +191,51 @@ def has_chunks(conn):
     return _chunks_built
 
 
+def browse(limit=100, offset=0, open_only=False, position_type=None,
+           country=None, dedupe=True):
+    """Every position matching the filters, with no question asked.
+
+    Retrieval answers "which of these best matches what I typed". This answers
+    "what is there", which is a different question and a better one when you are
+    choosing where to apply: the ranked search returns its best sixty, and sixty
+    is not the same as all eighty-six.
+
+    Ordered by deadline, soonest first, because that is the only ordering that
+    tells you what to do next. Positions with no deadline go last -- they are not
+    urgent, they are unknown.
+
+    Returns (rows, total) so the page can say how many more there are.
+    """
+    where = ["true"]
+    if open_only:
+        where.append("(closes_at IS NULL OR closes_at > now())")
+    if position_type:
+        where.append("%(type)s = ANY(position_type)")
+    if country:
+        where.append("country_code = %(country)s")
+    clause = " AND ".join(where)
+
+    params = {"type": position_type, "country": country,
+              "limit": limit, "offset": offset}
+
+    with psycopg.connect(DSN) as conn:
+        total = conn.execute(
+            f"SELECT count(*) FROM positions WHERE {clause}", params
+        ).fetchone()[0]
+
+        rows = conn.execute(
+            f"SELECT {COLUMNS} FROM positions"
+            f" WHERE {clause}"
+            "  ORDER BY closes_at ASC NULLS LAST, posted_at DESC NULLS LAST"
+            "  LIMIT %(limit)s OFFSET %(offset)s",
+            params,
+        ).fetchall()
+
+    # as_result leaves every score None, which is right: nothing was scored.
+    results = [as_result(row) for row in rows]
+    return (collapse(results) if dedupe else results), total
+
+
 def collapse(results):
     """One row per job, where several boards carry the same one.
 

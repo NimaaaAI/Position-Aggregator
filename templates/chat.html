@@ -272,8 +272,9 @@ main{max-width:80rem;margin:0 auto;padding:2rem 1.6rem 5rem;display:grid;
   <section class="col">
     <div class="col-head"><span class="label">The answer</span>
       <span class="right" id="answer-right"></span></div>
-    <div id="answer" class="placeholder">Ask a question in plain language, or press
-      Search to watch retrieval work alone — no model, no cost.</div>
+    <div id="answer" class="placeholder">Ask a question in plain language — or set
+      the filters, leave the box empty and press Search to browse everything that
+      matches.</div>
     <div id="miss"></div>
     <div class="stats" id="stats"></div>
   </section>
@@ -330,8 +331,17 @@ function paintFilters() {
   $('#f-hybrid').classList.toggle('on', !$('#hybrid').checked);
   $('#f-dedupe').classList.toggle('on', !$('#dedupe').checked);
 }
-for (const id of ['#ptype', '#country', '#openonly', '#hybrid', '#dedupe'])
-  $(id).onchange = paintFilters;
+// Changing a filter with an empty question box can only mean "show me what is
+// there now", so it browses immediately rather than waiting to be asked twice.
+// With a question typed it does not, because that would throw the question away.
+function filterChanged() {
+  paintFilters();
+  if (!$('#q').value.trim()) browse(false);
+}
+
+for (const id of ['#ptype', '#country', '#openonly', '#dedupe'])
+  $(id).onchange = filterChanged;
+$('#hybrid').onchange = paintFilters;   // only affects ranking, nothing to rebrowse
 paintFilters();
 
 // A missing score means that search did not return this position at all, which is
@@ -404,9 +414,60 @@ function render(text, positions) {
   return html;
 }
 
+// No question, but filters set: show everything that matches instead of nothing.
+// Straight from the table -- no embedding, no reranking, no model.
+let browsing = null;
+
+async function browse(more) {
+  const body = payload();
+  browsing = more ? {...browsing, offset: browsing.offset + browsing.limit}
+                  : {limit: 100, offset: 0, open_only: body.open_only,
+                     dedupe: body.dedupe, position_type: body.position_type,
+                     country: body.country};
+
+  if (!more) {
+    $('#answer').innerHTML = '<div class="placeholder">Browsing — nothing was ranked '
+      + 'and no model was called. Type a question to search instead.</div>';
+    $('#miss').innerHTML = '';
+    $('#positions').innerHTML = Array.from({length: 5}, () =>
+      '<div class="skel"><div style="width:72%"></div><div style="width:44%"></div></div>').join('');
+  }
+
+  const response = await fetch('/api/browse', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(browsing),
+  });
+  const data = await response.json();
+  if (data.error) {
+    $('#answer').innerHTML = `<div class="err">${esc(data.error)}</div>`;
+    return;
+  }
+
+  shown = more ? shown.concat(data.positions) : data.positions;
+  showPositions(shown, 0);
+  $('#poshead').textContent =
+    `${shown.length} of ${data.total.toLocaleString()}, soonest deadline first`;
+  $('#stats').innerHTML =
+    `<span>Straight from the database in <b>${data.timings.retrieval_ms}ms</b></span>`;
+
+  if (shown.length < data.total) {
+    $('#positions').insertAdjacentHTML('beforeend',
+      '<div style="padding:1.2rem 0;text-align:center">'
+      + '<button class="btn" id="more">Show more</button></div>');
+    $('#more').onclick = () => browse(true);
+  }
+}
+
+let shown = [];
+
 async function run(endpoint) {
   const body = payload();
-  if (!body.question) { $('#q').focus(); return; }
+  // Search with an empty box means "show me what is there". Ask with an empty box
+  // means nothing at all -- there is no question to answer.
+  if (!body.question) {
+    if (endpoint === '/api/search') browse(false); else $('#q').focus();
+    return;
+  }
 
   for (const b of ['#ask', '#find']) $(b).disabled = true;
   $('#answer').innerHTML = '<span class="spin"></span><span class="placeholder">working…</span>';
