@@ -255,6 +255,11 @@ def collapse(results):
 
     Nothing is deleted. The copies that lose are attached to the winner as
     `also_on` so the other board's link and deadline stay one click away.
+
+    The survivor is whichever copy the fused ranking put first, since this runs
+    before the shortlist is cut. Which copy wins barely matters -- the two carry
+    near-identical text and score within a whisker of each other -- while having
+    enough distinct positions left to fill the shortlist matters a great deal.
     """
     best = {}
     for item in results:
@@ -403,7 +408,19 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
     for key, score in fused.items():
         found[key]["fused_score"] = score
 
-    results = sorted(found.values(), key=lambda item: -item["fused_score"])[:wanted]
+    results = sorted(found.values(), key=lambda item: -item["fused_score"])
+
+    # Collapsed before the list is cut, not after.
+    #
+    # Three searches each return `wanted`, so this pool holds well over `wanted`
+    # distinct positions. Cutting first and merging afterwards throws the surplus
+    # away and then discovers it was needed: ask for 60, merge nine pairs, see 51.
+    # Merging first spends the surplus on replacements instead, and asking for 60
+    # gives 60. Only when the whole pool collapses below `wanted` is there a
+    # shortfall, and then there genuinely is nothing more to show.
+    if dedupe:
+        results = collapse(results)
+    results = results[:wanted]
 
     if rerank and results:
         # The cross-encoder reads the question and the advert together, rather than
@@ -417,11 +434,6 @@ def retrieve(question, limit=DEFAULT_LIMIT, open_only=False, rerank=False,
         for item, score in zip(results, scores, strict=True):
             item["rerank_score"] = float(score)
         results.sort(key=lambda item: -item["rerank_score"])
-
-    # Last, so that ranking decides which copy survives and collapsing cannot
-    # change what was found -- only how much of it is shown twice.
-    if dedupe:
-        results = collapse(results)
 
     return results[:limit]
 
