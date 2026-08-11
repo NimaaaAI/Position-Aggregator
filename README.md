@@ -7,9 +7,9 @@
 ![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/postgres-16-4169E1?logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-0.8-000000)
-![Sources](https://img.shields.io/badge/sources-4-blueviolet)
-![Positions](https://img.shields.io/badge/positions-6%2C505-success)
-![Chunks](https://img.shields.io/badge/chunks-31%2C012-success)
+![Sources](https://img.shields.io/badge/sources-5-blueviolet)
+![Positions](https://img.shields.io/badge/positions-14%2C743-success)
+![Chunks](https://img.shields.io/badge/chunks-61%2C785-success)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)
 
 </div>
@@ -19,14 +19,14 @@
 ## 🔄 Flow
 
 ```
-  academicpositions  academictransfer  jobs.ac.uk  euraxess
-            └───────────────┴────┬───────────┴──────────┘
-   ┌────────────────────────────▼────┐
-   │   scrape.py     │  sitemap → raw HTML on disk
+   five job boards — see Sources
+            │
+   ┌────────▼────────┐
+   │   scrape.py     │  sitemaps and listings → raw HTML on disk
    ├─────────────────┤
-   │   extract.py    │  HTML → rows · types · stopwords     ┐
-   ├─────────────────┤                                      ├─ update.py
-   │   embed.py      │  text → vectors, whole + chunked     ┘
+   │   extract.py    │  HTML → rows · types · countries · stopwords  ┐
+   ├─────────────────┤                                               ├─ update.py
+   │   embed.py      │  text → vectors, whole and chunked            ┘
    └────────┬────────┘
             │
    ┌────────▼────────┐
@@ -50,12 +50,18 @@
 
 ## 🌐 Sources
 
-| Board | Positions | Coverage |
-|---|---|---|
-| `academicpositions` | 2,045 | Europe-wide, research posts |
-| `academictransfer` | 913 | Netherlands, research posts |
-| `jobsacuk` | 2,136 | UK and international, all university roles |
-| `euraxess` | 1,411 | EU-wide — the only one reaching Italy, Spain, Poland, Czechia |
+| Board | Positions | PhD share | Coverage |
+|---|---|---|---|
+| `euraxess` | 8,127 | **25%** | EU-wide. The only one reaching Italy, Spain, Poland, Czechia |
+| `jobsacuk` | 2,565 | 8% | UK and international, every university role including admin |
+| `academicpositions` | 2,132 | — | Europe-wide, research posts |
+| `academictransfer` | 964 | — | Netherlands, research posts |
+| `naturecareers` | 955 | 6% | Global — the only one reaching the US in any number |
+
+The PhD share is worth knowing before adding a sixth. EURAXESS is a researcher portal
+and a quarter of it is doctoral; jobs.ac.uk and Nature Careers are general boards where
+most adverts are faculty, admin or recruitment drives. All of it is kept — the type
+filter decides what you see — but 900 adverts do not mean 900 candidates.
 
 **No site is named anywhere in the code.** `sites.yml` holds everything specific to
 one, and the scripts loop over it.
@@ -81,6 +87,8 @@ scripts already absorb, each from config rather than a branch in the code:
 | Ad id numeric (`358334`) or alphanumeric (`DQH648`) | `id_pattern` per board |
 | `JobPosting` at the top level, or nested under `mainEntity` | both are checked |
 | No `JobPosting` at all — facts in a `<dt>`/`<dd>` list | `fields` maps label → column |
+| `JobPosting` present but incomplete | the same `fields` list fills the blanks |
+| A whole address under one label — `Hangzhou, Zhejiang, China` | the city is the part before the first comma |
 | Advert body in the JSON-LD, the share link, or the page | all read, **longest wins** |
 | `jobLocation` a single place, or a list of them | first entry taken |
 
@@ -348,7 +356,11 @@ python extract.py --countries      # prints every mapping it makes
 It prints rather than working quietly because its last resort is a fuzzy match, and a
 fuzzy match can be wrong. Anything it cannot resolve is left `NULL` and reported, so it
 simply never appears in the filter — failing to offer a country is harmless, offering
-the wrong one is not.
+the wrong one is not. `'Europe'` is the current example: two adverts, not a country,
+left alone.
+
+Some boards publish the code already — Nature Careers writes `US`, `DE`, `CN` — and
+those pass straight through. The work is only for the ones writing prose.
 
 ---
 
@@ -411,7 +423,7 @@ Two things are stored as each board writes them rather than normalised:
   because they carry different deadlines and one often stays live after the other
   closes. Search collapses them for display instead; see below.
 
-### `position_chunks` — ~4.8 rows per advert
+### `position_chunks` — ~4.2 rows per advert
 
 | Column | Type | |
 |---|---|---|
@@ -460,9 +472,9 @@ This is what the daily limit counts and what the admin page reports.
 | `ndoc` | `integer` | adverts containing it |
 | `share` | `real` | fraction of all adverts (kept above `0.25`) |
 
-Currently 176 words, and it moves every time the corpus does — 241, then 185, then
-176 as each board arrived. Which words are too common to search for is a property of
-the data, so it is measured on every update rather than written down.
+Currently 141 words, and it moves every time the corpus does — 241, 185, 176, then 141
+as each board arrived. Which words are too common to search for is a property of the
+data, so it is measured on every update rather than written down.
 
 <details>
 <summary>Useful queries</summary>
