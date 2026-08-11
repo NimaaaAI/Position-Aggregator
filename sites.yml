@@ -39,6 +39,28 @@ sites:
     id_pattern: '/job/([A-Za-z0-9]+)'
     delay: 2
 
+  # https://www.nature.com/naturecareers/job/<id>/<job-title>/
+  #
+  # Their sitemap index names ten children and only one holds adverts: sitemap1-*
+  # are category and filter pages, sitemap3 and sitemap4 are employer profiles.
+  # Hence sitemap_match: sitemap2 rather than something looser -- the others are
+  # large and contain nothing we want.
+  #
+  # robots.txt blocks their search and their RSS feed, neither of which we use.
+  - name: naturecareers
+    sitemap_index: https://www.nature.com/naturecareers/sitemapindex.xml
+    sitemap_match: sitemap2
+    job_url_contains: /naturecareers/job/
+    id_pattern: '/job/(\d+)'
+    delay: 2
+    # Their JobPosting gives the country and stops -- no addressLocality at all --
+    # while the page prints "Hangzhou, Zhejiang, China" under a Location heading.
+    # Without this the city is empty, and an empty city means the advert can never
+    # be recognised as the same job another board is also carrying.
+    fields:
+      city: Location
+      employer: Employer
+
   # https://euraxess.ec.europa.eu/jobs/<id>
   #
   # The European Commission's researcher portal, and the only one of these carrying
