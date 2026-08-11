@@ -1,8 +1,9 @@
 """Bring everything up to date: download what is new, extract it, embed it.
 
-    python update.py              the whole thing
-    python update.py --no-scrape  local steps only, no downloading
-    python update.py --quiet      just the summary
+    python update.py                   the whole thing
+    python update.py --skip euraxess   everything but the slow board
+    python update.py --no-scrape       local steps only, no downloading
+    python update.py --quiet           just the summary
 
 Each step already skips work it has done before, so a normal run handles only the
 positions that appeared since the last one -- a couple of minutes rather than an hour.
@@ -80,6 +81,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-scrape", action="store_true",
                         help="skip downloading; extract and embed what is on disk")
+    parser.add_argument("--skip", action="append", metavar="BOARD",
+                        help="do not download this board. Its pages already on disk "
+                             "are still extracted and embedded. Repeat for several")
+    parser.add_argument("--site", action="append", metavar="BOARD",
+                        help="download only this board. Repeat for several")
     parser.add_argument("--quiet", action="store_true",
                         help="hide each step's output, show only the summary")
     args = parser.parse_args()
@@ -90,7 +96,15 @@ def main():
 
     print(f"starting with {before[0]} positions, {before[1]} embedded")
 
-    steps = [s for s in STEPS if not (args.no_scrape and s[0] == "download")]
+    # Only the download step takes --site/--skip. Everything after it works from the
+    # files on disk, and re-reading a board that was not downloaded costs nothing --
+    # every later step skips what it has already done.
+    choose = [flag for name in (args.skip or []) for flag in ("--skip", name)]
+    choose += [flag for name in (args.site or []) for flag in ("--site", name)]
+
+    steps = [(name, command + choose if name == "download" else command)
+             for name, command in STEPS
+             if not (args.no_scrape and name == "download")]
     failed = []
     total = 0.0
 
