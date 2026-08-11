@@ -78,12 +78,36 @@ parser.add_argument("--one", action="store_true", help="download a single ad")
 parser.add_argument("--all", action="store_true", help="download everything")
 parser.add_argument("--update", action="store_true",
                     help="nightly: refresh the sitemap, diff it, download what is new")
+parser.add_argument("--site", action="append", metavar="NAME",
+                    help="only this board. Repeat for several")
+parser.add_argument("--skip", action="append", metavar="NAME",
+                    help="every board but this one. Repeat for several")
 args = parser.parse_args()
 
 if not (args.list or args.one or args.all or args.update):
     sys.exit("pick one: --list, --one, --all or --update")
 
 sites = yaml.safe_load((ROOT / "sites.yml").read_text(encoding="utf-8"))["sites"]
+
+# --site and --skip pick which boards this run touches. Three of the four publish a
+# sitemap and finish in seconds; euraxess has none, so its URLs can only be found by
+# walking 830 listing pages, which takes most of an hour whether anything changed or
+# not. Being able to leave it out is the difference between updating over coffee and
+# updating overnight.
+#
+# A name that matches no board stops the run. Silently skipping nothing, or silently
+# selecting nothing, would look like success and cost an hour to notice.
+known = {site["name"] for site in sites}
+for name in (args.site or []) + (args.skip or []):
+    if name not in known:
+        sys.exit(f"no board called {name!r}. sites.yml has: {', '.join(sorted(known))}")
+
+if args.site:
+    sites = [site for site in sites if site["name"] in args.site]
+if args.skip:
+    sites = [site for site in sites if site["name"] not in args.skip]
+if not sites:
+    sys.exit("--site and --skip between them left no boards to do")
 
 for site in sites:
     name = site["name"]
