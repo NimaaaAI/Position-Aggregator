@@ -76,6 +76,7 @@ scripts already absorb, each from config rather than a branch in the code:
 | Varies | Handled by |
 |---|---|
 | Ads listed in a sitemap, or only on paginated search pages | `sitemap_index` or `listing_url` |
+| A board too slow to update every time | `--skip` / `--site` on the download |
 | Sitemap URLs with or without `https://` | added when missing |
 | Ad id numeric (`358334`) or alphanumeric (`DQH648`) | `id_pattern` per board |
 | `JobPosting` at the top level, or nested under `mainEntity` | both are checked |
@@ -93,8 +94,11 @@ User-Agent, `Retry-After` honoured when the server rate-limits, and no attempt t
 defeat any control. A refusal stops the crawl rather than being worked around.
 
 It is also the only board with **no** structured job data, which is why `extract.py`
-has a definition-list fallback at all. Its 8,128 adverts are still being collected;
-the count above is what has landed so far.
+has a definition-list fallback at all — its facts live in a `<dt>`/`<dd>` list, and
+`fields` in `sites.yml` says which label holds which column.
+
+It is also the slow one to update, which is why `update.py` can leave it out. See
+[Collect and stay current](#collect-and-stay-current).
 
 ---
 
@@ -149,7 +153,24 @@ python update.py
 | 6 | one vector per position | `embed.py --all` |
 | 7 | one vector per passage | `embed.py --chunks` |
 
-Every step skips work already done. First run ≈ 1 hour, later runs ≈ 2 minutes.
+Every step skips work already done.
+
+**Three of the four boards are quick; EURAXESS is not.** The others publish a sitemap,
+so finding out what is new means reading one file. EURAXESS publishes none, so its
+URLs can only be found by walking 830 listing pages — most of an hour, with rate-limit
+pauses, whether anything changed or not.
+
+```bash
+python update.py --skip euraxess     # the three fast boards, ~2 minutes
+python update.py                     # all four, allow an evening
+python update.py --site euraxess     # only the slow one
+python update.py --no-scrape         # download nothing, process what is on disk
+```
+
+`--skip` and `--site` apply **only to downloading**. Pages already on disk for a
+skipped board are still extracted, embedded and chunked, so a partial run never leaves
+the database out of step with the files. A name matching no board stops the run rather
+than silently skipping nothing.
 
 ### Search
 
