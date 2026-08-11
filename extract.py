@@ -137,10 +137,16 @@ def read(path):
     soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
     site = SITES.get(path.parent.name) or {}
 
-    # JSON-LD wherever a board publishes it, and failing that the page's own
-    # definition list. Tried in this order because JSON-LD is the board's own
-    # machine-readable answer and needs no configuration to read.
-    job = json_ld_job(soup) or labelled_job(soup, site.get("fields") or {})
+    # The page's own <dt>/<dd> list, when sites.yml says which labels mean what.
+    # It serves two purposes: it is the whole record for a board publishing no
+    # JSON-LD, and it fills the gaps for a board whose JSON-LD is incomplete.
+    # Nature Careers is the second kind -- its JobPosting gives the country and
+    # not the city, while the page prints "Hangzhou, Zhejiang, China" plainly.
+    listed = labelled_job(soup, site.get("fields") or {})
+
+    # JSON-LD first where there is any: it is the board's own machine-readable
+    # answer, and it needs no configuration to read.
+    job = json_ld_job(soup) or listed
     if job is None:
         return None
 
@@ -152,6 +158,16 @@ def read(path):
         location = location[0] if location else {}
     address = location.get("address") or {}
     organisation = job.get("hiringOrganization") or {}
+
+    # Anything the JSON-LD did not answer, ask the page's list for. Only blanks are
+    # filled, never overwritten -- the structured block is the better source where
+    # it has an opinion.
+    if listed is not None and listed is not job:
+        spare = ((listed.get("jobLocation") or {}).get("address")) or {}
+        address = {key: address.get(key) or spare.get(key)
+                   for key in set(address) | set(spare)}
+        if not organisation.get("name"):
+            organisation = listed.get("hiringOrganization") or organisation
 
     canonical = soup.find("link", rel="canonical")
     url = canonical["href"] if canonical and canonical.get("href") else ""
@@ -184,7 +200,10 @@ def read(path):
 
     title = job.get("title") or ""
     employer = organisation.get("name") or ""
-    city = address.get("addressLocality") or ""
+    # "Hangzhou, Zhejiang, China" -> "Hangzhou". Boards that print a whole address
+    # under one label put the city first; boards that publish a proper
+    # addressLocality have no comma in it, so this does nothing to them.
+    city = (address.get("addressLocality") or "").split(",")[0].strip()
     country = address.get("addressCountry") or ""
 
     # What the embedding model actually sees: the facts first, because they are the
