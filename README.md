@@ -198,7 +198,7 @@ python ask.py --models
 ### Browser
 
 ```bash
-python chat.py            # → http://127.0.0.1:8000
+python chat.py            # → http://127.0.0.1:8001
 ```
 
 Asks you to sign in first. `/register` requests an account, `/admin` approves them.
@@ -280,8 +280,8 @@ unlimited, so hitting the limit degrades the service rather than stopping it.
 Two terminals. The first serves, the second exposes.
 
 ```bash
-python chat.py                                  # 127.0.0.1:8000
-ssh -R 80:127.0.0.1:8000 nokey@localhost.run    # prints an https://….lhr.life URL
+python chat.py                                  # 127.0.0.1:8001
+ssh -R 80:127.0.0.1:8001 nokey@localhost.run    # prints an https://….lhr.life URL
 ```
 
 That is the whole thing — no port opened on the router, no public IP, no certificate
@@ -289,12 +289,12 @@ to renew. The models stay on this machine; only HTTP crosses the tunnel.
 
 **Use `127.0.0.1`, not `localhost`**, in the `-R` argument. `localhost` can resolve to
 IPv6 `::1` first, and a server bound to `0.0.0.0` is IPv4 only — the tunnel then knocks
-on a door nobody is behind and reports `connect_to localhost port 8000: failed`.
+on a door nobody is behind and reports `connect_to localhost port 8001: failed`.
 
 To reach it from another device on the same wifi instead, no tunnel is needed:
 
 ```bash
-python chat.py --host 0.0.0.0        # then http://<this-mac's-LAN-IP>:8000
+python chat.py --host 0.0.0.0        # then http://<this-mac's-LAN-IP>:8001
 ```
 
 The free tunnel gives a new URL each time and dies with the terminal. A stable name
