@@ -1,6 +1,6 @@
 """A local web interface over the same pipeline the command line uses.
 
-    python chat.py            then open http://127.0.0.1:8000
+    python chat.py            then open http://127.0.0.1:8001
 
 Binds to localhost only. This is one person's tool on one machine: there is no
 login because there is nobody else, and nothing is reachable from the network.
@@ -610,7 +610,7 @@ def api_countries(request: Request):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--no-open", action="store_true")
     parser.add_argument("--add-user", metavar="NAME",
                         help="create a sign-in, or reset an existing password")
