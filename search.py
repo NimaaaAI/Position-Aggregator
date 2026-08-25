@@ -43,7 +43,7 @@ QUERY = "query: "
 #
 # 60 rather than a larger number because reranking is the expensive stage: the
 # cross-encoder reads each (question, advert) pair in full at roughly 25ms a pair,
-# so 60 costs about 1.5 seconds and 500 would cost twelve.
+# so 60 costs about 1.5 seconds and 500 would cost 12.
 DEFAULT_LIMIT = 60
 
 # Loaded once and reused. The web interface asks many questions in one process, and
