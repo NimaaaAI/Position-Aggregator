@@ -271,7 +271,7 @@ disable or remove yourself.
 
 Only the written answer costs anything, so only `Ask` is capped — **50 a day per
 person** by default, editable per user in the panel. Searching is free and stays
-unlimited, so hitting the limit degrades the service rather than stopping it.
+unlimited, so hitting the limit degrades the service rather than stopping it...
 
 ---
 
