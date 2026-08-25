@@ -374,7 +374,7 @@ intact. `--no-dedupe` shows every copy.
 same title  AND  same city  AND  different source  →  the same job
 ```
 
-All three parts are needed, and each was added because of a case that broke without it:
+All three parts are required, and each was added because of a case that broke without it:
 
 | Part | Without it |
 |---|---|
