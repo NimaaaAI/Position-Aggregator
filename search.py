@@ -47,7 +47,7 @@ QUERY = "query: "
 DEFAULT_LIMIT = 60
 
 # Loaded once and reused. The web interface asks many questions in one process, and
-# reloading a model per question would dominate the response time.
+# reloading a model per question would dominate the response time...
 _encoder = None
 _reranker = None
 _chunks_built = None
