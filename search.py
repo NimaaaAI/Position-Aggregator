@@ -38,7 +38,7 @@ RERANKER = "BAAI/bge-reranker-v2-m3"
 # so a question has to be asked as "query: " or the two are not comparable.
 QUERY = "query: "
 
-# How many positions a search returns by default. All of them get reranked, and the
+# How many positions a search returns by default? All of them get reranked, and the
 # best handful of those go to the model.
 #
 # 60 rather than a larger number because reranking is the expensive stage: the
