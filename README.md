@@ -366,7 +366,7 @@ those pass straight through. The work is only for the ones writing prose.
 
 ## 🔗 The same job on several boards
 
-Four boards overlap, so one job can occupy several of the ten slots the model sees.
+Four boards overlap, so one job can occupy several of the ten slots the model can see.
 Search shows one row and hangs the others off it as **also on …**, with their links
 intact. `--no-dedupe` shows every copy.
 
