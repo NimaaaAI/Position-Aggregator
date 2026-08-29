@@ -8,8 +8,8 @@
 ![Postgres](https://img.shields.io/badge/postgres-16-4169E1?logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-0.8-000000)
 ![Sources](https://img.shields.io/badge/sources-5-blueviolet)
-![Positions](https://img.shields.io/badge/positions-14%2C743-success)
-![Chunks](https://img.shields.io/badge/chunks-61%2C785-success)
+![Positions](https://img.shields.io/badge/positions-17%2C391-success)
+![Chunks](https://img.shields.io/badge/chunks-73%2C035-success)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)
 
 </div>
@@ -52,16 +52,18 @@
 
 | Board | Positions | PhD share | Coverage |
 |---|---|---|---|
-| `euraxess` | 8,127 | **25%** | EU-wide. The only one reaching Italy, Spain, Poland, Czechia |
-| `jobsacuk` | 2,565 | 8% | UK and international, every university role including admin |
-| `academicpositions` | 2,132 | — | Europe-wide, research posts |
-| `academictransfer` | 964 | — | Netherlands, research posts |
-| `naturecareers` | 955 | 6% | Global — the only one reaching the US in any number |
+| `euraxess` | 8,755 | 17% | EU-wide. The only one reaching Italy, Spain, Poland, Czechia |
+| `jobsacuk` | 3,837 | 5% | UK and international, every university role including admin |
+| `academicpositions` | 2,451 | **30%** | Europe-wide, research posts |
+| `academictransfer` | 1,205 | 23% | Netherlands, research posts |
+| `naturecareers` | 1,143 | 6% | Global — the only one reaching the US in any number |
 
-The PhD share is worth knowing before adding a sixth. EURAXESS is a researcher portal
-and a quarter of it is doctoral; jobs.ac.uk and Nature Careers are general boards where
-most adverts are faculty, admin or recruitment drives. All of it is kept — the type
-filter decides what you see — but 900 adverts do not mean 900 candidates.
+The PhD share is worth knowing before adding a sixth. Volume and yield pull in opposite
+directions: EURAXESS is the largest board but only a sixth of it is doctoral, while
+Academic Positions and AcademicTransfer are half its size and several times denser.
+jobs.ac.uk and Nature Careers are general boards where most adverts are faculty, admin
+or recruitment drives. All of it is kept — the type filter decides what you see — but
+1,100 adverts do not mean 1,100 candidates.
 
 **No site is named anywhere in the code.** `sites.yml` holds everything specific to
 one, and the scripts loop over it.
