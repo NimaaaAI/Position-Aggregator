@@ -527,9 +527,11 @@ def api_stats(request: Request):
         return JSONResponse({"error": "not signed in"}, status_code=401)
 
     with psycopg.connect(search.DSN) as conn:
-        total, embedded, countries, open_now = conn.execute(
+        total, embedded, countries, open_now, expired, archived = conn.execute(
             "SELECT count(*), count(embedding), count(DISTINCT country),"
-            "       count(*) FILTER (WHERE closes_at > now())"
+            "       count(*) FILTER (WHERE closes_at > now()),"
+            "       count(*) FILTER (WHERE closes_at <= now()),"
+            "       count(*) FILTER (WHERE closed_at IS NOT NULL)"
             "  FROM positions"
         ).fetchone()
         newest = conn.execute(
@@ -542,7 +544,8 @@ def api_stats(request: Request):
 
     return JSONResponse({
         "positions": total, "embedded": embedded, "countries": countries,
-        "open": open_now, "newest": newest,
+        "open": open_now, "expired": expired, "archived": archived,
+        "newest": newest,
         "by_country": [{"country": c, "count": n} for c, n in top],
     })
 
