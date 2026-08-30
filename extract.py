@@ -5,6 +5,7 @@ here costs a re-run of seconds rather than another hour of fetching.
 
     python extract.py --one    read one file, print what came out, write nothing
     python extract.py --all    read every file and fill the positions table
+    python extract.py --archive  retire positions whose deadline has passed
 """
 
 import argparse
@@ -662,6 +663,88 @@ def check():
             print(f"     starts    {opening}...")
 
 
+def archive(grace=0, dry_run=False):
+    """Retire positions whose closing date has passed.
+
+    The row stays. What goes is the weight: the advert body, the text it was
+    embedded from, the position vector, and every chunk cut from it. What is left
+    -- url, title, employer, where, both dates -- is enough to say that the post
+    existed and is over, which is all a closed advert is still good for.
+
+    Deleting the row instead would not survive contact with update.py. scrape.py
+    decides what to download by looking for the HTML file on disk, and that file
+    stays; extract.py decides what to read by looking for extracted_at in the
+    table, and deleting the row throws that away. The next run would read all
+    those files back in and re-embed them. Keeping the row keeps extracted_at,
+    and so keeps the promise that a page is read once.
+
+    Nulling the three columns is both the saving and the tombstone. embed.py asks
+    for `embed_text IS NOT NULL AND embedding IS NULL` before embedding and for
+    `description IS NOT NULL` before chunking, so a row emptied this way asks for
+    neither. It stays archived through any number of updates.
+
+    grace is days past the deadline to wait before touching anything. Deadlines
+    get extended and reposted, so 0 takes them at their word and a week or two is
+    the cautious reading.
+    """
+    cutoff = f"now() - interval '{int(grace)} days'"
+
+    with psycopg.connect(DSN) as conn:
+        doomed = conn.execute(
+            f"SELECT count(*) FROM positions"
+            f" WHERE closes_at <= {cutoff} AND closed_at IS NULL"
+        ).fetchone()[0]
+        chunks = conn.execute(
+            f"SELECT count(*) FROM position_chunks c"
+            f"  JOIN positions p ON (p.source, p.source_id) = (c.source, c.source_id)"
+            f" WHERE p.closes_at <= {cutoff} AND p.closed_at IS NULL"
+        ).fetchone()[0]
+
+        if grace:
+            print(f"closed more than {grace} day(s) ago and not yet archived:")
+        else:
+            print("past their closing date and not yet archived:")
+        print(f"  {doomed:,} position(s), {chunks:,} chunk(s)")
+
+        if not doomed:
+            print("  nothing to do")
+            return
+
+        if dry_run:
+            print("\n  --dry-run, nothing written")
+            for row in conn.execute(
+                f"SELECT title, employer, closes_at::date FROM positions"
+                f" WHERE closes_at <= {cutoff} AND closed_at IS NULL"
+                f" ORDER BY closes_at LIMIT 5"
+            ).fetchall():
+                print(f"    {row[2]}  {(row[0] or '')[:58]}  {(row[1] or '')[:28]}")
+            return
+
+        conn.execute(
+            f"DELETE FROM position_chunks c"
+            f" USING positions p"
+            f" WHERE (p.source, p.source_id) = (c.source, c.source_id)"
+            f"   AND p.closes_at <= {cutoff} AND p.closed_at IS NULL"
+        )
+        # closed_at is when we retired it, not when the employer said it shut.
+        # closes_at already holds that, and the two answer different questions.
+        done = conn.execute(
+            f"UPDATE positions"
+            f"   SET closed_at = now(), description = NULL,"
+            f"       embed_text = NULL, embedding = NULL"
+            f" WHERE closes_at <= {cutoff} AND closed_at IS NULL"
+        ).rowcount
+        conn.commit()
+
+        print(f"\n  archived {done:,} position(s), removed {chunks:,} chunk(s)")
+
+        total, live, archived = conn.execute(
+            "SELECT count(*), count(*) FILTER (WHERE closed_at IS NULL),"
+            "       count(*) FILTER (WHERE closed_at IS NOT NULL) FROM positions"
+        ).fetchone()
+        print(f"  {total:,} in the table: {live:,} live, {archived:,} archived")
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--one", action="store_true", help="read one file and print it")
 parser.add_argument("--all", action="store_true", help="read every file into the table")
@@ -678,14 +761,24 @@ parser.add_argument("--stopword-share", type=float, default=0.25,
                     help="a word in at least this fraction of adverts is a stopword")
 parser.add_argument("--countries", action="store_true",
                     help="turn each board's spelling of a country into an ISO code")
+parser.add_argument("--archive", action="store_true",
+                    help="retire positions whose closing date has passed")
+parser.add_argument("--grace", type=int, default=0, metavar="DAYS",
+                    help="with --archive, days past the deadline to wait first")
+parser.add_argument("--dry-run", action="store_true",
+                    help="with --archive, report what would go and write nothing")
 parser.add_argument("--force", action="store_true",
                     help="with --all, --types or --countries, redo work already done")
 args = parser.parse_args()
 
 if not (args.one or args.all or args.check or args.types or args.check_types
-        or args.stopwords or args.countries):
+        or args.stopwords or args.countries or args.archive):
     sys.exit("pick one: --one, --all, --types, --countries, --stopwords, "
-             "--check or --check-types")
+             "--archive, --check or --check-types")
+
+if args.archive:
+    archive(grace=args.grace, dry_run=args.dry_run)
+    sys.exit(0)
 
 if args.countries:
     resolve_countries(force=args.force)
