@@ -42,12 +42,13 @@ STEPS = [
 
 
 def counts():
-    """Where the database stands. Returns (positions, embedded, open)."""
+    """Where the database stands. Returns (positions, embedded, open, archived)."""
     try:
         with psycopg.connect(DSN) as conn:
             return conn.execute(
                 "SELECT count(*), count(embedding),"
-                "       count(*) FILTER (WHERE closes_at > now()) FROM positions"
+                "       count(*) FILTER (WHERE closes_at > now()),"
+                "       count(*) FILTER (WHERE closed_at IS NOT NULL) FROM positions"
             ).fetchone()
     except psycopg.Error as error:
         print(f"could not read the database: {error}")
@@ -124,6 +125,8 @@ def main():
         print(f"  positions   {after[0]}  ({after[0] - before[0]:+d})")
         print(f"  embedded    {after[1]}  ({after[1] - before[1]:+d})")
         print(f"  still open  {after[2]}")
+        print(f"  archived    {after[3]}  "
+              f"(python extract.py --archive retires the rest)")
         if after[1] < after[0]:
             print(f"  {after[0] - after[1]} position(s) have no vector yet")
 
