@@ -9,7 +9,7 @@
 ![pgvector](https://img.shields.io/badge/pgvector-0.8-000000)
 ![Sources](https://img.shields.io/badge/sources-5-blueviolet)
 ![Positions](https://img.shields.io/badge/positions-17%2C391-success)
-![Chunks](https://img.shields.io/badge/chunks-73%2C035-success)
+![Chunks](https://img.shields.io/badge/chunks-38%2C124-success)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)
 
 </div>
@@ -164,6 +164,34 @@ python update.py
 | 7 | one vector per passage | `embed.py --chunks` |
 
 Every step skips work already done.
+
+### Retiring closed adverts
+
+A deadline that has passed is not deleted, it is **archived**: the row stays, and what
+goes is the weight — advert body, embed text, position vector, and every chunk cut
+from it. What is left is enough to say the post existed and is over.
+
+```bash
+python extract.py --archive --dry-run   # what would go, writes nothing
+python extract.py --archive             # retire everything past its deadline
+python extract.py --archive --grace 14  # only what closed a fortnight ago or more
+```
+
+Not part of `update.py`, deliberately — it throws text away, so it is asked for rather
+than assumed. Run it when the archived count in the summary looks large.
+
+**Why not `DELETE`.** It would not survive the next update. `scrape.py` decides what to
+download by looking for the HTML file on disk, and that file stays; `extract.py` decides
+what to read by looking for `extracted_at` in the table, and deleting the row throws
+that away. The next run would read all those pages back in and re-embed them.
+
+Keeping the row keeps `extracted_at`. Nulling the three columns is both the saving and
+the tombstone: `embed.py` asks for `embed_text IS NOT NULL AND embedding IS NULL` before
+embedding and `description IS NOT NULL` before chunking, so an emptied row asks for
+neither and stays archived through any number of updates.
+
+Archiving 8,344 closed adverts took the database from 1002 MB to 536 MB. The 1.7 GB of
+HTML in `data/raw` is untouched, so `--force` can rebuild any of it.
 
 **Three of the four boards are quick; EURAXESS is not.** The others publish a sitemap,
 so finding out what is new means reading one file. EURAXESS publishes none, so its
@@ -413,7 +441,8 @@ Three tables. `psql -d positions`
 | `country_code` | `text` | ISO 3166 alpha-2, resolved from `country` |
 | `tsv` | `tsvector` | generated, `'simple'` config · GIN indexed |
 | `html_file`, `first_seen`, `last_seen` | | bookkeeping |
-| `closed_at`, `extracted_at`, `embedded_at` | `timestamptz` | |
+| `extracted_at`, `embedded_at` | `timestamptz` | bookkeeping |
+| `closed_at` | `timestamptz` | set by `--archive`; non-null means retired |
 
 Two things are stored as each board writes them rather than normalised:
 
@@ -484,7 +513,8 @@ data, so it is measured on every update rather than written down.
 ```sql
 -- where things stand, per board
 SELECT source, count(*) AS total, count(embedding) AS embedded,
-       count(*) FILTER (WHERE closes_at > now()) AS still_open
+       count(*) FILTER (WHERE closes_at > now()) AS still_open,
+       count(*) FILTER (WHERE closed_at IS NOT NULL) AS archived
   FROM positions GROUP BY source;
 
 -- open PhD positions by country
@@ -510,7 +540,7 @@ SELECT word, share FROM stopwords ORDER BY share DESC LIMIT 20;
 | File | |
 |---|---|
 | `scrape.py` | Sitemap → raw HTML. The only file that touches the internet |
-| `extract.py` | HTML → rows. Also `--one`, `--types`, `--stopwords`, `--check` |
+| `extract.py` | HTML → rows. Also `--one`, `--types`, `--stopwords`, `--archive`, `--check` |
 | `embed.py` | Rows → vectors. `--all` per position, `--chunks` per passage |
 | `search.py` | Retrieval + reranking. Imported, not run alone |
 | `ask.py` | Written answer with citations |
