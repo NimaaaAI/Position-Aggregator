@@ -127,7 +127,7 @@ for site in sites:
 
     # ---- collect the ad URLs -------------------------------------------------
     # --update always re-reads the sitemap. Without that it would work from the
-    # list saved on the previous run and never notice a single new ad.
+    # list saved on the previous run and never notice a single new ad (Most important part).
     if args.list or args.update or not url_file.exists():
         # Cleared only when a collection is cut short. A truncated list must never be
         # saved: the next run would diff against it and record thousands of perfectly
