@@ -2,7 +2,7 @@
 
 # 🎓 Position Aggregator
 
-**Every academic job advert, in one local database — searchable by meaning, by keyword, or by asking.**
+**Academic job adverts, in one local database — searchable by meaning, by keyword, or by asking.**
 
 ![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/postgres-16-4169E1?logo=postgresql&logoColor=white)
