@@ -1,0 +1,55 @@
+# Builds the website's Qdrant collections. Nothing here touches the local Mac or
+# the local Postgres: the runner downloads the adverts itself, embeds them, and
+# pushes. The Mac's pipeline and this one share only the code they import.
+name: build
+
+on:
+  # The first load is started by hand. Every run after it is the nightly one.
+  workflow_dispatch:
+  schedule:
+    # 03:00 UTC, when the boards are quiet.
+    - cron: "0 3 * * *"
+
+# One build at a time. The first load takes hours, and a nightly run starting
+# underneath it would have both writing the same points. Queued, not cancelled --
+# cancelling mid-load would leave indexing switched off.
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The hard cap is 360. Stopping at 350 leaves the summary visible instead of
+    # the job being killed mid-write.
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # The embedding model, ~1.1 GB, downloaded once and reused. Without this
+      # every nightly run re-fetches it from the Hub before doing any work.
+      - name: Cache the models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-${{ hashFiles('requirements.txt') }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          # CPU wheel explicitly. The default index serves the CUDA build, which
+          # is 2.5 GB of driver support this runner has no card for.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+
+      - name: Build
+        env:
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+        run: python website_build.py --all
