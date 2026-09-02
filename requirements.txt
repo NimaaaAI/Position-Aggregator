@@ -9,3 +9,5 @@ ruff==0.16.1
 fastapi
 uvicorn
 pycountry==24.6.1
+qdrant-client==1.19.0
+fastembed==0.7.5
