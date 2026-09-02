@@ -356,7 +356,10 @@ def build_all(dry_run=False):
 
             written = skipped = closed = 0
             positions, chunks = [], []
-            with tempfile.TemporaryDirectory() as tmp:
+            # dir=ROOT because extract.read() records the file as a path relative
+            # to the project directory, and /tmp is not under it. The directory
+            # and everything in it goes when the block ends.
+            with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
                 board_dir = Path(tmp) / name
                 board_dir.mkdir()
                 for number, url in enumerate(todo, 1):
