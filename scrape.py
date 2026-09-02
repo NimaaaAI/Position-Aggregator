@@ -72,6 +72,34 @@ def ad_id(url, pattern):
     return found.group(1)
 
 
+def sitemap_urls(site, delay=2):
+    """Every ad URL a board publishes in its sitemaps.
+
+    Lifted out of main() so the website builder can call it too. Four of the five
+    boards are found this way; euraxess publishes no sitemap and is walked from its
+    listing pages instead, which is why that path stays where it is.
+    """
+    print("reading the sitemap index")
+    index = get(site["sitemap_index"]).text
+    sitemaps = [s for s in re.findall(r"<loc>([^<]+)</loc>", index)
+                if site["sitemap_match"] in s]
+    print(f"  {len(sitemaps)} matching sitemap(s)")
+
+    urls = []
+    for sitemap in sitemaps:
+        time.sleep(delay)
+        body = get(sitemap).text
+        urls += [u for u in re.findall(r"<loc>([^<]+)</loc>", body)
+                 if site["job_url_contains"] in u]
+
+    # jobs.ac.uk writes its <loc> values without a scheme -- "www.jobs.ac.uk/
+    # job/DQH648/..." -- which requests rejects outright. Fixed here rather
+    # than at download time so the saved URL list, the id, and the ad's stored
+    # URL all agree, and so nothing downstream has to know a site did this.
+    urls = [u if u.startswith("http") else f"https://{u}" for u in urls]
+    return sorted(set(urls))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--list", action="store_true", help="collect the URLs only")
@@ -167,25 +195,7 @@ def main():
                     time.sleep(delay)
                 urls = sorted(found)
             else:
-                print("reading the sitemap index")
-                index = get(site["sitemap_index"]).text
-                sitemaps = [s for s in re.findall(r"<loc>([^<]+)</loc>", index)
-                            if site["sitemap_match"] in s]
-                print(f"  {len(sitemaps)} matching sitemap(s)")
-
-                urls = []
-                for sitemap in sitemaps:
-                    time.sleep(delay)
-                    body = get(sitemap).text
-                    urls += [u for u in re.findall(r"<loc>([^<]+)</loc>", body)
-                             if site["job_url_contains"] in u]
-
-                # jobs.ac.uk writes its <loc> values without a scheme -- "www.jobs.ac.uk/
-                # job/DQH648/..." -- which requests rejects outright. Fixed here rather
-                # than at download time so the saved URL list, the id, and the ad's stored
-                # URL all agree, and so nothing downstream has to know a site did this.
-                urls = [u if u.startswith("http") else f"https://{u}" for u in urls]
-                urls = sorted(set(urls))
+                urls = sitemap_urls(site, delay)
 
             data.mkdir(parents=True, exist_ok=True)
 
