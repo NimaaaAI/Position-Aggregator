@@ -267,7 +267,15 @@ def browse(limit=100, offset=0, open_only=True, position_type=None, country=None
 
 
 def stats():
+    """Counts for the header. `expired` is not among them on purpose: the builder
+    deletes a position the night its deadline passes, so out here the number is
+    always zero and printing it would only invite the question."""
     qdrant = client()
-    info = qdrant.get_collection(POSITIONS)
-    return {"positions": info.points_count,
-            "chunks": qdrant.get_collection(CHUNKS).points_count}
+    return {
+        "positions": qdrant.get_collection(POSITIONS).points_count,
+        "chunks": qdrant.get_collection(CHUNKS).points_count,
+        "open": qdrant.count(collection_name=POSITIONS, exact=True,
+                             count_filter=where(open_only=True)).count,
+        "countries": len([h for h in qdrant.facet(
+            collection_name=POSITIONS, key="country_code", limit=300).hits if h.value]),
+    }
