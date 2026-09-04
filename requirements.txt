@@ -1,6 +1,5 @@
 beautifulsoup4==4.15.0
 fastapi
-fastembed==0.8.0
 openai==2.51.0
 pgvector==0.5.0
 psycopg==3.3.4
@@ -8,7 +7,6 @@ pycountry==26.2.16
 pydantic==2.13.4
 python-dotenv==1.2.2
 PyYAML==6.0.3
-qdrant-client==1.19.0
 requests==2.34.2
 ruff==0.16.1
 sentence-transformers==5.6.1
