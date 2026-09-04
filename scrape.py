@@ -72,225 +72,210 @@ def ad_id(url, pattern):
     return found.group(1)
 
 
-def sitemap_urls(site, delay=2):
-    """Every ad URL a board publishes in its sitemaps.
+parser = argparse.ArgumentParser()
+parser.add_argument("--list", action="store_true", help="collect the URLs only")
+parser.add_argument("--one", action="store_true", help="download a single ad")
+parser.add_argument("--all", action="store_true", help="download everything")
+parser.add_argument("--update", action="store_true",
+                    help="nightly: refresh the sitemap, diff it, download what is new")
+parser.add_argument("--site", action="append", metavar="NAME",
+                    help="only this board. Repeat for several")
+parser.add_argument("--skip", action="append", metavar="NAME",
+                    help="every board but this one. Repeat for several")
+args = parser.parse_args()
 
-    Lifted out of main() so the website builder can call it too. Four of the five
-    boards are found this way; euraxess publishes no sitemap and is walked from its
-    listing pages instead, which is why that path stays where it is.
-    """
-    print("reading the sitemap index")
-    index = get(site["sitemap_index"]).text
-    sitemaps = [s for s in re.findall(r"<loc>([^<]+)</loc>", index)
-                if site["sitemap_match"] in s]
-    print(f"  {len(sitemaps)} matching sitemap(s)")
+if not (args.list or args.one or args.all or args.update):
+    sys.exit("pick one: --list, --one, --all or --update")
 
-    urls = []
-    for sitemap in sitemaps:
-        time.sleep(delay)
-        body = get(sitemap).text
-        urls += [u for u in re.findall(r"<loc>([^<]+)</loc>", body)
-                 if site["job_url_contains"] in u]
+sites = yaml.safe_load((ROOT / "sites.yml").read_text(encoding="utf-8"))["sites"]
 
-    # jobs.ac.uk writes its <loc> values without a scheme -- "www.jobs.ac.uk/
-    # job/DQH648/..." -- which requests rejects outright. Fixed here rather
-    # than at download time so the saved URL list, the id, and the ad's stored
-    # URL all agree, and so nothing downstream has to know a site did this.
-    urls = [u if u.startswith("http") else f"https://{u}" for u in urls]
-    return sorted(set(urls))
+# --site and --skip pick which boards this run touches. Three of the four publish a
+# sitemap and finish in seconds; euraxess has none, so its URLs can only be found by
+# walking 830 listing pages, which takes most of an hour whether anything changed or
+# not. Being able to leave it out is the difference between updating over coffee and
+# updating overnight.
+#
+# A name that matches no board stops the run. Silently skipping nothing, or silently
+# selecting nothing, would look like success and cost an hour to notice.
+known = {site["name"] for site in sites}
+for name in (args.site or []) + (args.skip or []):
+    if name not in known:
+        sys.exit(f"no board called {name!r}. sites.yml has: {', '.join(sorted(known))}")
 
+if args.site:
+    sites = [site for site in sites if site["name"] in args.site]
+if args.skip:
+    sites = [site for site in sites if site["name"] not in args.skip]
+if not sites:
+    sys.exit("--site and --skip between them left no boards to do")
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--list", action="store_true", help="collect the URLs only")
-    parser.add_argument("--one", action="store_true", help="download a single ad")
-    parser.add_argument("--all", action="store_true", help="download everything")
-    parser.add_argument("--update", action="store_true",
-                        help="nightly: refresh the sitemap, diff it, download what is new")
-    parser.add_argument("--site", action="append", metavar="NAME",
-                        help="only this board. Repeat for several")
-    parser.add_argument("--skip", action="append", metavar="NAME",
-                        help="every board but this one. Repeat for several")
-    args = parser.parse_args()
+for site in sites:
+    name = site["name"]
+    delay = site.get("delay", 2)
+    data = ROOT / "data"
+    url_file = data / f"{name}_urls.txt"
+    prev_file = data / f"{name}_urls_prev.txt"
+    closed_file = data / f"{name}_closed.txt"
+    dead_file = data / f"{name}_dead.txt"
+    html_dir = data / "raw" / name
 
-    if not (args.list or args.one or args.all or args.update):
-        sys.exit("pick one: --list, --one, --all or --update")
+    print(f"\n=== {name}")
 
-    sites = yaml.safe_load((ROOT / "sites.yml").read_text(encoding="utf-8"))["sites"]
+    # Left as None when the collection below is skipped, so the saved list is read
+    # instead. Set by every path that collects, so a cut-short run keeps what it got.
+    urls = None
 
-    # --site and --skip pick which boards this run touches. Three of the four publish a
-    # sitemap and finish in seconds; euraxess has none, so its URLs can only be found by
-    # walking 830 listing pages, which takes most of an hour whether anything changed or
-    # not. Being able to leave it out is the difference between updating over coffee and
-    # updating overnight.
-    #
-    # A name that matches no board stops the run. Silently skipping nothing, or silently
-    # selecting nothing, would look like success and cost an hour to notice.
-    known = {site["name"] for site in sites}
-    for name in (args.site or []) + (args.skip or []):
-        if name not in known:
-            sys.exit(f"no board called {name!r}. sites.yml has: {', '.join(sorted(known))}")
+    # ---- collect the ad URLs -------------------------------------------------
+    # --update always re-reads the sitemap. Without that it would work from the
+    # list saved on the previous run and never notice a single new ad (Most important part).
+    if args.list or args.update or not url_file.exists():
+        # Cleared only when a collection is cut short. A truncated list must never be
+        # saved: the next run would diff against it and record thousands of perfectly
+        # open ads as closed.
+        complete = True
 
-    if args.site:
-        sites = [site for site in sites if site["name"] in args.site]
-    if args.skip:
-        sites = [site for site in sites if site["name"] not in args.skip]
-    if not sites:
-        sys.exit("--site and --skip between them left no boards to do")
+        if site.get("listing_url"):
+            # Some boards publish no sitemap of their ads, so the ad URLs have to
+            # come from the listing pages themselves. Walking stops when a page
+            # contributes nothing new, which needs no advertised total and copes
+            # with the count changing while we walk.
+            #
+            # id_pattern does the filtering here rather than job_url_contains,
+            # because "/jobs/search" and "/jobs/459098" both contain "/jobs/" and
+            # only the second is an advert.
+            print(f"walking {site['listing_url']}")
+            found = set()
+            page = 0
+            while True:
+                response = get(f"{site['listing_url']}?{site['page_param']}={page}")
+                # A refused page is not the end of the listing. Told apart from
+                # running out of pages because the two need opposite responses:
+                # one means the list is finished, the other that it is truncated.
+                if response.status_code != 200:
+                    print(f"  refused at page {page}: HTTP {response.status_code}")
+                    complete = False
+                    break
+                links = (urllib.parse.urljoin(site["listing_url"], href)
+                         for href in re.findall(r'href="([^"]+)"', response.text))
+                fresh = {u for u in links if re.search(site["id_pattern"], u)} - found
+                if not fresh:
+                    break
+                found |= fresh
+                page += 1
+                print(f"  page {page}: {len(fresh)} new, {len(found)} so far")
+                time.sleep(delay)
+            urls = sorted(found)
+        else:
+            print("reading the sitemap index")
+            index = get(site["sitemap_index"]).text
+            sitemaps = [s for s in re.findall(r"<loc>([^<]+)</loc>", index)
+                        if site["sitemap_match"] in s]
+            print(f"  {len(sitemaps)} matching sitemap(s)")
 
-    for site in sites:
-        name = site["name"]
-        delay = site.get("delay", 2)
-        data = ROOT / "data"
-        url_file = data / f"{name}_urls.txt"
-        prev_file = data / f"{name}_urls_prev.txt"
-        closed_file = data / f"{name}_closed.txt"
-        dead_file = data / f"{name}_dead.txt"
-        html_dir = data / "raw" / name
+            urls = []
+            for sitemap in sitemaps:
+                time.sleep(delay)
+                body = get(sitemap).text
+                urls += [u for u in re.findall(r"<loc>([^<]+)</loc>", body)
+                         if site["job_url_contains"] in u]
 
-        print(f"\n=== {name}")
+            # jobs.ac.uk writes its <loc> values without a scheme -- "www.jobs.ac.uk/
+            # job/DQH648/..." -- which requests rejects outright. Fixed here rather
+            # than at download time so the saved URL list, the id, and the ad's stored
+            # URL all agree, and so nothing downstream has to know a site did this.
+            urls = [u if u.startswith("http") else f"https://{u}" for u in urls]
+            urls = sorted(set(urls))
 
-        # Left as None when the collection below is skipped, so the saved list is read
-        # instead. Set by every path that collects, so a cut-short run keeps what it got.
-        urls = None
+        data.mkdir(parents=True, exist_ok=True)
 
-        # ---- collect the ad URLs -------------------------------------------------
-        # --update always re-reads the sitemap. Without that it would work from the
-        # list saved on the previous run and never notice a single new ad (Most important part).
-        if args.list or args.update or not url_file.exists():
-            # Cleared only when a collection is cut short. A truncated list must never be
-            # saved: the next run would diff against it and record thousands of perfectly
-            # open ads as closed.
-            complete = True
-
-            if site.get("listing_url"):
-                # Some boards publish no sitemap of their ads, so the ad URLs have to
-                # come from the listing pages themselves. Walking stops when a page
-                # contributes nothing new, which needs no advertised total and copes
-                # with the count changing while we walk.
-                #
-                # id_pattern does the filtering here rather than job_url_contains,
-                # because "/jobs/search" and "/jobs/459098" both contain "/jobs/" and
-                # only the second is an advert.
-                print(f"walking {site['listing_url']}")
-                found = set()
-                page = 0
-                while True:
-                    response = get(f"{site['listing_url']}?{site['page_param']}={page}")
-                    # A refused page is not the end of the listing. Told apart from
-                    # running out of pages because the two need opposite responses:
-                    # one means the list is finished, the other that it is truncated.
-                    if response.status_code != 200:
-                        print(f"  refused at page {page}: HTTP {response.status_code}")
-                        complete = False
-                        break
-                    links = (urllib.parse.urljoin(site["listing_url"], href)
-                             for href in re.findall(r'href="([^"]+)"', response.text))
-                    fresh = {u for u in links if re.search(site["id_pattern"], u)} - found
-                    if not fresh:
-                        break
-                    found |= fresh
-                    page += 1
-                    print(f"  page {page}: {len(fresh)} new, {len(found)} so far")
-                    time.sleep(delay)
-                urls = sorted(found)
-            else:
-                urls = sitemap_urls(site, delay)
-
-            data.mkdir(parents=True, exist_ok=True)
-
-            if not complete:
-                # Download what was collected, but leave the saved list alone: it is the
-                # only record of which ads exist, and half a list is worse than an old one.
-                print(f"\n  {len(urls)} collected before being cut short -- "
-                      f"the saved list is left as it was")
-                if not url_file.exists():
-                    url_file.write_text("\n".join(urls), encoding="utf-8")
-                urls = sorted(set(urls) | set(url_file.read_text(encoding="utf-8").split()))
-
-            else:
-                # Compare against the previous run before overwriting it. An ad that has
-                # dropped out of the sitemap has closed, and that is worth recording:
-                # its HTML file stays on disk and would otherwise look open forever.
-                previous = (set(url_file.read_text(encoding="utf-8").split())
-                            if url_file.exists() else set())
-                added = sorted(set(urls) - previous)
-                gone = sorted(previous - set(urls))
-
-                if url_file.exists():
-                    prev_file.write_text(url_file.read_text(encoding="utf-8"), encoding="utf-8")
+        if not complete:
+            # Download what was collected, but leave the saved list alone: it is the
+            # only record of which ads exist, and half a list is worse than an old one.
+            print(f"\n  {len(urls)} collected before being cut short -- "
+                  f"the saved list is left as it was")
+            if not url_file.exists():
                 url_file.write_text("\n".join(urls), encoding="utf-8")
+            urls = sorted(set(urls) | set(url_file.read_text(encoding="utf-8").split()))
 
-                print(f"\n  {len(urls)} ads listed")
-                if previous:
-                    print(f"  {len(added)} new, {len(gone)} gone, "
-                          f"{len(set(urls) & previous)} unchanged")
-                if gone:
-                    with closed_file.open("a", encoding="utf-8") as fh:
-                        for url in gone:
-                            fh.write(f"{date.today().isoformat()}\t{url}\n")
-                    print(f"  closures appended to {closed_file.relative_to(ROOT)}")
+        else:
+            # Compare against the previous run before overwriting it. An ad that has
+            # dropped out of the sitemap has closed, and that is worth recording:
+            # its HTML file stays on disk and would otherwise look open forever.
+            previous = (set(url_file.read_text(encoding="utf-8").split())
+                        if url_file.exists() else set())
+            added = sorted(set(urls) - previous)
+            gone = sorted(previous - set(urls))
 
-        if urls is None:
-            urls = url_file.read_text(encoding="utf-8").split()
-        if args.list:
+            if url_file.exists():
+                prev_file.write_text(url_file.read_text(encoding="utf-8"), encoding="utf-8")
+            url_file.write_text("\n".join(urls), encoding="utf-8")
+
+            print(f"\n  {len(urls)} ads listed")
+            if previous:
+                print(f"  {len(added)} new, {len(gone)} gone, "
+                      f"{len(set(urls) & previous)} unchanged")
+            if gone:
+                with closed_file.open("a", encoding="utf-8") as fh:
+                    for url in gone:
+                        fh.write(f"{date.today().isoformat()}\t{url}\n")
+                print(f"  closures appended to {closed_file.relative_to(ROOT)}")
+
+    if urls is None:
+        urls = url_file.read_text(encoding="utf-8").split()
+    if args.list:
+        continue
+
+    # ---- download the ad pages ----------------------------------------------
+    html_dir.mkdir(parents=True, exist_ok=True)
+
+    # Sitemaps go stale: a few ads are listed but already deleted, and answer 404.
+    # Without remembering them they would be retried on every run for ever, and the
+    # "to go" count would never reach zero.
+    dead = set(dead_file.read_text(encoding="utf-8").split()) if dead_file.exists() else set()
+
+    todo = [u for u in urls
+            if u not in dead and not (html_dir / f"{ad_id(u, site['id_pattern'])}.html").exists()]
+
+    # Counted before --one truncates the list, otherwise "already downloaded" is
+    # whatever is left over and reads as though the whole board were already on disk.
+    print(f"\n{len(urls) - len(todo) - len(dead & set(urls))} already downloaded, "
+          f"{len(todo)} to go, {len(dead & set(urls))} known dead")
+    if args.one:
+        todo = todo[:1]
+
+    for number, url in enumerate(todo, 1):
+        path = html_dir / f"{ad_id(url, site['id_pattern'])}.html"
+        try:
+            response = get(url)
+        except requests.RequestException as error:
+            print(f"  FAILED: {error}")
             continue
 
-        # ---- download the ad pages ----------------------------------------------
-        html_dir.mkdir(parents=True, exist_ok=True)
+        if response.status_code == 404:
+            with dead_file.open("a", encoding="utf-8") as fh:
+                fh.write(f"{url}\n")
+            continue
 
-        # Sitemaps go stale: a few ads are listed but already deleted, and answer 404.
-        # Without remembering them they would be retried on every run for ever, and the
-        # "to go" count would never reach zero.
-        dead = set(dead_file.read_text(encoding="utf-8").split()) if dead_file.exists() else set()
+        if response.status_code != 200:
+            continue
 
-        todo = [u for u in urls
-                if u not in dead and not (html_dir / f"{ad_id(u, site['id_pattern'])}.html").exists()]
+        path.write_text(response.text, encoding="utf-8")
 
-        # Counted before --one truncates the list, otherwise "already downloaded" is
-        # whatever is left over and reads as though the whole board were already on disk.
-        print(f"\n{len(urls) - len(todo) - len(dead & set(urls))} already downloaded, "
-              f"{len(todo)} to go, {len(dead & set(urls))} known dead")
         if args.one:
-            todo = todo[:1]
+            # The listing page was a JavaScript shell with empty grey loading bars
+            # where the jobs should be. Check this page is not the same before
+            # committing to thousands of requests.
+            skeletons = response.text.count("placeholder-content_item")
+            print(f"\n  saved {path.relative_to(ROOT)}")
+            print(f"  page size: {len(response.text):,} characters")
+            print(f"  placeholder bars: {skeletons}")
+            if skeletons:
+                print("  EMPTY SHELL - stop, this needs a different approach")
+            else:
+                print("  real content - safe to run --all")
 
-        for number, url in enumerate(todo, 1):
-            path = html_dir / f"{ad_id(url, site['id_pattern'])}.html"
-            try:
-                response = get(url)
-            except requests.RequestException as error:
-                print(f"  FAILED: {error}")
-                continue
+        if number % 25 == 0:
+            print(f"  ... {number}/{len(todo)}")
+        time.sleep(delay)
 
-            if response.status_code == 404:
-                with dead_file.open("a", encoding="utf-8") as fh:
-                    fh.write(f"{url}\n")
-                continue
-
-            if response.status_code != 200:
-                continue
-
-            path.write_text(response.text, encoding="utf-8")
-
-            if args.one:
-                # The listing page was a JavaScript shell with empty grey loading bars
-                # where the jobs should be. Check this page is not the same before
-                # committing to thousands of requests.
-                skeletons = response.text.count("placeholder-content_item")
-                print(f"\n  saved {path.relative_to(ROOT)}")
-                print(f"  page size: {len(response.text):,} characters")
-                print(f"  placeholder bars: {skeletons}")
-                if skeletons:
-                    print("  EMPTY SHELL - stop, this needs a different approach")
-                else:
-                    print("  real content - safe to run --all")
-
-            if number % 25 == 0:
-                print(f"  ... {number}/{len(todo)}")
-            time.sleep(delay)
-
-        print(f"\n  {len(list(html_dir.glob('*.html')))} ad pages on disk")
-
-
-if __name__ == "__main__":
-    main()
+    print(f"\n  {len(list(html_dir.glob('*.html')))} ad pages on disk")
