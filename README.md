@@ -1,14 +1,3 @@
----
-title: Position Aggregator
-emoji: 🎓
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
-short_description: Academic job adverts from four boards, searchable by meaning
----
-
 <div align="center">
 
 # 🎓 Position Aggregator
