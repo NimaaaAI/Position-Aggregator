@@ -745,123 +745,118 @@ def archive(grace=0, dry_run=False):
         print(f"  {total:,} in the table: {live:,} live, {archived:,} archived")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--one", action="store_true", help="read one file and print it")
-    parser.add_argument("--all", action="store_true", help="read every file into the table")
-    parser.add_argument("--check", action="store_true",
-                        help="report what is in the table so it can be verified")
-    parser.add_argument("--types", action="store_true",
-                        help="work out what kind of post each one is (phd, postdoc, ...)")
-    parser.add_argument("--check-types", action="store_true",
-                        help="report what the type classifier decided")
-    parser.add_argument("--stopwords", action="store_true",
-                        help="count word frequencies and record the words too common "
-                             "to be worth searching for")
-    parser.add_argument("--stopword-share", type=float, default=0.25,
-                        help="a word in at least this fraction of adverts is a stopword")
-    parser.add_argument("--countries", action="store_true",
-                        help="turn each board's spelling of a country into an ISO code")
-    parser.add_argument("--archive", action="store_true",
-                        help="retire positions whose closing date has passed")
-    parser.add_argument("--grace", type=int, default=0, metavar="DAYS",
-                        help="with --archive, days past the deadline to wait first")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="with --archive, report what would go and write nothing")
-    parser.add_argument("--force", action="store_true",
-                        help="with --all, --types or --countries, redo work already done")
-    args = parser.parse_args()
+parser = argparse.ArgumentParser()
+parser.add_argument("--one", action="store_true", help="read one file and print it")
+parser.add_argument("--all", action="store_true", help="read every file into the table")
+parser.add_argument("--check", action="store_true",
+                    help="report what is in the table so it can be verified")
+parser.add_argument("--types", action="store_true",
+                    help="work out what kind of post each one is (phd, postdoc, ...)")
+parser.add_argument("--check-types", action="store_true",
+                    help="report what the type classifier decided")
+parser.add_argument("--stopwords", action="store_true",
+                    help="count word frequencies and record the words too common "
+                         "to be worth searching for")
+parser.add_argument("--stopword-share", type=float, default=0.25,
+                    help="a word in at least this fraction of adverts is a stopword")
+parser.add_argument("--countries", action="store_true",
+                    help="turn each board's spelling of a country into an ISO code")
+parser.add_argument("--archive", action="store_true",
+                    help="retire positions whose closing date has passed")
+parser.add_argument("--grace", type=int, default=0, metavar="DAYS",
+                    help="with --archive, days past the deadline to wait first")
+parser.add_argument("--dry-run", action="store_true",
+                    help="with --archive, report what would go and write nothing")
+parser.add_argument("--force", action="store_true",
+                    help="with --all, --types or --countries, redo work already done")
+args = parser.parse_args()
 
-    if not (args.one or args.all or args.check or args.types or args.check_types
-            or args.stopwords or args.countries or args.archive):
-        sys.exit("pick one: --one, --all, --types, --countries, --stopwords, "
-                 "--archive, --check or --check-types")
+if not (args.one or args.all or args.check or args.types or args.check_types
+        or args.stopwords or args.countries or args.archive):
+    sys.exit("pick one: --one, --all, --types, --countries, --stopwords, "
+             "--archive, --check or --check-types")
 
-    if args.archive:
-        archive(grace=args.grace, dry_run=args.dry_run)
-        sys.exit(0)
+if args.archive:
+    archive(grace=args.grace, dry_run=args.dry_run)
+    sys.exit(0)
 
-    if args.countries:
-        resolve_countries(force=args.force)
-        sys.exit(0)
+if args.countries:
+    resolve_countries(force=args.force)
+    sys.exit(0)
 
-    if args.stopwords:
-        build_stopwords(share=args.stopword_share)
-        sys.exit(0)
+if args.stopwords:
+    build_stopwords(share=args.stopword_share)
+    sys.exit(0)
 
-    if args.check:
-        check()
-        sys.exit(0)
+if args.check:
+    check()
+    sys.exit(0)
 
-    if args.types:
-        classify_all(force=args.force)
-        sys.exit(0)
+if args.types:
+    classify_all(force=args.force)
+    sys.exit(0)
 
-    if args.check_types:
-        check_types()
-        sys.exit(0)
+if args.check_types:
+    check_types()
+    sys.exit(0)
 
-    sites = list(SITES.values())
+sites = list(SITES.values())
 
-    for site in sites:
-        files = sorted((ROOT / "data" / "raw" / site["name"]).glob("*.html"))
-        print(f"\n=== {site['name']}: {len(files)} file(s) on disk")
+for site in sites:
+    files = sorted((ROOT / "data" / "raw" / site["name"]).glob("*.html"))
+    print(f"\n=== {site['name']}: {len(files)} file(s) on disk")
 
-        if args.one:
-            row = read(files[0])
-            if row is None:
-                sys.exit(f"no JobPosting block found in {files[0].name}")
-            print(f"\nread {files[0].name}, nothing written\n")
-            for key, value in row.items():
-                text = str(value)
-                if key in ("description", "embed_text", "summary"):
-                    print(f"  {key} ({len(text)} chars):")
-                    print(f"      {text[:700]}...")
-                else:
-                    print(f"  {key:12} {text[:110]}")
+    if args.one:
+        row = read(files[0])
+        if row is None:
+            sys.exit(f"no JobPosting block found in {files[0].name}")
+        print(f"\nread {files[0].name}, nothing written\n")
+        for key, value in row.items():
+            text = str(value)
+            if key in ("description", "embed_text", "summary"):
+                print(f"  {key} ({len(text)} chars):")
+                print(f"      {text[:700]}...")
+            else:
+                print(f"  {key:12} {text[:110]}")
+        continue
+
+    written = skipped = no_body = 0
+    with psycopg.connect(DSN) as conn:
+        # Only read files that have not been extracted before. A downloaded page
+        # never changes, so re-reading it produces the same row. New files arrive
+        # from scrape.py --update and are not in this set.
+        done = set()
+        if not args.force:
+            done = {
+                row[0] for row in conn.execute(
+                    "SELECT source_id FROM positions "
+                    " WHERE source = %s AND extracted_at IS NOT NULL",
+                    (site["name"],),
+                ).fetchall()
+            }
+
+        files = [path for path in files if path.stem not in done]
+        print(f"  {len(done)} already extracted, {len(files)} to do")
+        if not files:
+            print("  nothing to do -- use --force to re-read everything")
             continue
 
-        written = skipped = no_body = 0
-        with psycopg.connect(DSN) as conn:
-            # Only read files that have not been extracted before. A downloaded page
-            # never changes, so re-reading it produces the same row. New files arrive
-            # from scrape.py --update and are not in this set.
-            done = set()
-            if not args.force:
-                done = {
-                    row[0] for row in conn.execute(
-                        "SELECT source_id FROM positions "
-                        " WHERE source = %s AND extracted_at IS NOT NULL",
-                        (site["name"],),
-                    ).fetchall()
-                }
-
-            files = [path for path in files if path.stem not in done]
-            print(f"  {len(done)} already extracted, {len(files)} to do")
-            if not files:
-                print("  nothing to do -- use --force to re-read everything")
+        for number, path in enumerate(files, 1):
+            row = read(path)
+            if row is None:
+                skipped += 1
                 continue
+            # An ad with no advert text is not much use, and if this count is high
+            # the share link is not the reliable source it appears to be.
+            if not row["description"]:
+                no_body += 1
+            conn.execute(UPSERT, row)
+            written += 1
+            if number % 250 == 0:
+                conn.commit()
+                print(f"  ... {number}/{len(files)}")
+        conn.commit()
 
-            for number, path in enumerate(files, 1):
-                row = read(path)
-                if row is None:
-                    skipped += 1
-                    continue
-                # An ad with no advert text is not much use, and if this count is high
-                # the share link is not the reliable source it appears to be.
-                if not row["description"]:
-                    no_body += 1
-                conn.execute(UPSERT, row)
-                written += 1
-                if number % 250 == 0:
-                    conn.commit()
-                    print(f"  ... {number}/{len(files)}")
-            conn.commit()
-
-        print(f"\n  {written} row(s) written")
-        print(f"  {skipped} skipped, no JobPosting block")
-        print(f"  {no_body} written with an empty description")
-
-
-if __name__ == "__main__":
-    main()
+    print(f"\n  {written} row(s) written")
+    print(f"  {skipped} skipped, no JobPosting block")
+    print(f"  {no_body} written with an empty description")
