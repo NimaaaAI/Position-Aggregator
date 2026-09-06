@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎓 Position Aggregator
+# 🎓 Position Aggregator V1
 
 **Academic job adverts, in one local database — searchable by meaning, by keyword, or by asking.**
 
